@@ -110,6 +110,46 @@ data class InspectionRecord(
     val manufacturerRiskLevel: String = "MEDIUM"
 )
 
+enum class UserRole(
+    val displayName: String,
+    val description: String,
+    val badgeLabel: String,
+    val iconName: String
+) {
+    CONSUMER(
+        displayName = "Citizen / Consumer",
+        description = "Verify packaged product MRP, net quantity, expiry & report violations",
+        badgeLabel = "Consumer Verification",
+        iconName = "Person"
+    ),
+    RETAILER(
+        displayName = "Retailer / Merchant",
+        description = "Pre-audit retail shelf stock, check distributor labels & avoid seizure fines",
+        badgeLabel = "Retail Compliance Mode",
+        iconName = "Storefront"
+    ),
+    OFFICER(
+        displayName = "Enforcement Officer",
+        description = "Conduct official Legal Metrology Act inspections, issue seizure & penalty notices",
+        badgeLabel = "Legal Metrology Enforcement",
+        iconName = "Shield"
+    )
+}
+
+data class UserProfile(
+    val id: String = "USR-7482",
+    val email: String = "officer.rajesh@lmpc.gov.in",
+    val name: String = "Inspector Rajesh V. Sharma",
+    val role: UserRole = UserRole.OFFICER,
+    val badgeOrOrg: String = "GOI-LM-WZ-2026",
+    val department: String = "Department of Consumer Affairs, Legal Metrology Wing",
+    val jurisdiction: String = "Western Zone / Mumbai Metro Division-4",
+    val totalInspectionsToday: Int = 24,
+    val compliantToday: Int = 18,
+    val violationsToday: Int = 6,
+    val highRiskToday: Int = 2
+)
+
 data class InspectorProfile(
     val id: String = "LM-OFFICER-8492",
     val name: String = "Inspector Rajesh V. Sharma",

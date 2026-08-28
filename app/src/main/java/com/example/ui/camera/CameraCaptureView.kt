@@ -20,6 +20,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -569,9 +570,52 @@ private fun CameraPreviewContent(
                     )
                 )
                 .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Live scanning sample badge
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Cyan500.copy(alpha = 0.2f),
+                border = BorderStroke(1.dp, Cyan400.copy(alpha = 0.6f)),
+                modifier = Modifier
+                    .padding(bottom = 12.dp)
+                    .clickable {
+                        // Quick scan sample package
+                        val sampleImg = CapturedProductImage(
+                            id = "img_scan_${System.currentTimeMillis()}",
+                            uri = "img_detergent_package",
+                            side = selectedSide,
+                            isSampleAsset = true,
+                            resolution = "1920x1080",
+                            fileSizeKb = 284L
+                        )
+                        onImageCaptured(sampleImg)
+                    }
+                    .testTag("camera_sample_scan_button")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Cyan400)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "⚡ Tap to Scan Sample Packaging",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = Cyan400,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp
+                        )
+                    )
+                }
+            }
+
             // Side description tip
             Text(
                 text = selectedSide.description,
@@ -580,7 +624,7 @@ private fun CameraPreviewContent(
                     fontSize = 11.sp,
                     textAlign = TextAlign.Center
                 ),
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 14.dp)
             )
 
             // Shutter & Controls Row

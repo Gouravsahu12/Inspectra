@@ -80,7 +80,7 @@ fun InspectraApp(viewModel: InspectraViewModel) {
     if (showSplash) {
         SplashScreen(onSplashFinished = { showSplash = false })
     } else if (!isLoggedIn) {
-        LoginScreen(onLoginSuccess = { viewModel.login("LM-OFFICER-8492", "pass") })
+        LoginScreen(viewModel = viewModel)
     } else if (showReportScreen) {
         ReportScreen(
             viewModel = viewModel,

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -73,6 +74,7 @@ import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate600
 import com.example.ui.theme.Slate700
+import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import com.example.ui.theme.ViolationRed
 import com.example.ui.theme.WarningAmber
@@ -88,7 +90,7 @@ fun HomeScreen(
     onSelectInspection: (InspectionRecord) -> Unit,
     onNavigateToTab: (Int) -> Unit
 ) {
-    val profile by viewModel.inspectorProfile.collectAsState()
+    val userProfile by viewModel.currentUserProfile.collectAsState()
     val inspections by viewModel.inspections.collectAsState()
 
     val totalCount = inspections.size
@@ -111,7 +113,7 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Top Officer Bar
+            // Top User Bar
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -128,7 +130,7 @@ fun HomeScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "RS",
+                            text = userProfile.name.take(2).uppercase(),
                             style = MaterialTheme.typography.titleMedium.copy(
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
@@ -138,14 +140,14 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Good morning, Officer",
+                            text = "Welcome, ${userProfile.role.displayName}",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = Slate500,
                                 fontSize = 12.sp
                             )
                         )
                         Text(
-                            text = profile.name,
+                            text = userProfile.name,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Slate900
@@ -155,6 +157,38 @@ fun HomeScreen(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val isSyncing by viewModel.isSyncing.collectAsState()
+                    val syncMessage by viewModel.syncStatusMessage.collectAsState()
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color(0xFFF0FDF4))
+                            .border(1.dp, Color(0xFFBBF7D0), RoundedCornerShape(20.dp))
+                            .clickable { viewModel.syncWithCloud() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSyncing) WarningAmber else CompliantGreen)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isSyncing) "Syncing..." else "Supabase Live",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = Color(0xFF166534),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
@@ -389,12 +423,93 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(10.dp))
         }
 
-        items(inspections.take(5)) { inspection ->
-            InspectionItemCard(
-                inspection = inspection,
-                onClick = { onSelectInspection(inspection) }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
+        if (inspections.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(Slate100),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Gavel,
+                                contentDescription = null,
+                                tint = Navy700,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No Inspections Yet",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Slate900
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Live database connected to Supabase PostgreSQL. Tap below to scan your first product package.",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = Slate500,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { onStartNewInspection() },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Navy900),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("New Scan", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                            }
+
+                            Button(
+                                onClick = { viewModel.syncWithCloud() },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Slate100),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Slate800
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Sync Supabase", style = MaterialTheme.typography.labelSmall.copy(color = Slate800, fontWeight = FontWeight.Bold))
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            items(inspections.take(5)) { inspection ->
+                InspectionItemCard(
+                    inspection = inspection,
+                    onClick = { onSelectInspection(inspection) }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
         }
 
         item {

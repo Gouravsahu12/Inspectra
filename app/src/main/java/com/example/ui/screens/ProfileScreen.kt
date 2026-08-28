@@ -72,7 +72,7 @@ fun ProfileScreen(
     viewModel: InspectraViewModel,
     onLogout: () -> Unit
 ) {
-    val profile by viewModel.inspectorProfile.collectAsState()
+    val userProfile by viewModel.currentUserProfile.collectAsState()
     var showRuleDirectory by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -90,7 +90,7 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Inspector Credentials & Settings",
+                text = "Account & System Profile",
                 style = MaterialTheme.typography.headlineSmall.copy(
                     fontWeight = FontWeight.Bold,
                     color = Slate900
@@ -99,7 +99,7 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Officer ID Card
+            // User Profile Card
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = Navy900,
@@ -122,7 +122,7 @@ fun ProfileScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "RS",
+                                    text = userProfile.name.take(2).uppercase(),
                                     style = MaterialTheme.typography.titleLarge.copy(
                                         color = GoldAccent,
                                         fontWeight = FontWeight.Bold
@@ -134,21 +134,21 @@ fun ProfileScreen(
 
                             Column {
                                 Text(
-                                    text = profile.name,
+                                    text = userProfile.name,
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
                                     )
                                 )
                                 Text(
-                                    text = profile.designation,
+                                    text = userProfile.role.badgeLabel,
                                     style = MaterialTheme.typography.bodySmall.copy(
                                         color = Slate400,
                                         fontSize = 11.sp
                                     )
                                 )
                                 Text(
-                                    text = "Badge ID: ${profile.id}",
+                                    text = "${userProfile.role.displayName} • ${userProfile.email}",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = GoldAccent,
                                         fontWeight = FontWeight.Bold,
@@ -169,7 +169,7 @@ fun ProfileScreen(
                     ) {
                         Column {
                             Text(
-                                text = "JURISDICTION ZONE",
+                                text = "IDENTIFIER / ORG REF",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontSize = 9.sp,
                                     color = Slate400,
@@ -177,7 +177,7 @@ fun ProfileScreen(
                                 )
                             )
                             Text(
-                                text = profile.jurisdiction,
+                                text = userProfile.badgeOrOrg,
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = Color.White,
                                     fontWeight = FontWeight.Medium
@@ -187,7 +187,7 @@ fun ProfileScreen(
 
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                text = "AUTH STATUS",
+                                text = "PORTAL ACCESS",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontSize = 9.sp,
                                     color = Slate400,
@@ -203,7 +203,7 @@ fun ProfileScreen(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "ACTIVE DSC TOKEN",
+                                    text = "VERIFIED SESSION",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = CompliantGreen,
                                         fontWeight = FontWeight.Bold,

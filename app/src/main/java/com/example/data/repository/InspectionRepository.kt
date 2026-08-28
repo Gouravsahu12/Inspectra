@@ -1,7 +1,11 @@
 package com.example.data.repository
 
+import android.util.Log
 import com.example.data.local.InspectionDao
 import com.example.data.local.InspectionEntity
+import com.example.data.remote.SupabaseClient
+import com.example.data.remote.dto.toDomain
+import com.example.data.remote.dto.toSupabaseDto
 import com.example.model.ComplianceStatus
 import com.example.model.ExtractedField
 import com.example.model.FieldStatus
@@ -9,8 +13,10 @@ import com.example.model.InspectionRecord
 import com.example.model.ProductCategory
 import com.example.model.Severity
 import com.example.model.Violation
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -26,12 +32,131 @@ class InspectionRepository(private val dao: InspectionDao) {
 
     suspend fun insertInspection(inspection: InspectionRecord) {
         dao.insertInspection(inspection.toEntity())
+        // Seamlessly sync with Supabase remote backend in background
+        withContext(Dispatchers.IO) {
+            try {
+                if (SupabaseClient.isConfigured) {
+                    val response = SupabaseClient.apiService.insertInspection(inspection.toSupabaseDto())
+                    if (response.isSuccessful) {
+                        Log.d("InspectionRepository", "Successfully uploaded inspection ${inspection.id} to Supabase")
+                    } else {
+                        Log.w("InspectionRepository", "Supabase upload returned code: ${response.code()}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("InspectionRepository", "Remote sync postponed (offline cached): ${e.message}")
+            }
+        }
+    }
+
+    suspend fun syncWithRemote(): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            if (!SupabaseClient.isConfigured) {
+                return@withContext Result.failure(Exception("Supabase credentials not configured"))
+            }
+
+            val response = SupabaseClient.apiService.getInspections()
+            if (response.isSuccessful) {
+                val remoteList = response.body() ?: emptyList()
+                if (remoteList.isNotEmpty()) {
+                    val domainList = remoteList.map { it.toDomain() }
+                    dao.insertAll(domainList.map { it.toEntity() })
+                }
+                Result.success(remoteList.size)
+            } else {
+                Result.failure(Exception("Supabase returned HTTP ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Log.e("InspectionRepository", "Sync failed", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun signInWithSupabase(email: String, password: String): Result<com.example.data.remote.dto.SupabaseAuthResponse> = withContext(Dispatchers.IO) {
+        try {
+            if (!SupabaseClient.isConfigured) {
+                return@withContext Result.failure(Exception("Supabase credentials not configured"))
+            }
+
+            val request = com.example.data.remote.dto.SupabaseSignInRequest(
+                email = email.trim(),
+                password = password
+            )
+            val response = SupabaseClient.authService.signInWithPassword(request = request)
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                Result.success(body)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: ""
+                val msg = parseSupabaseErrorMessage(errorBody, response.code())
+                Result.failure(Exception(msg))
+            }
+        } catch (e: Exception) {
+            Log.e("InspectionRepository", "Supabase Sign In error", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun signUpWithSupabase(
+        email: String,
+        password: String,
+        role: String,
+        fullName: String
+    ): Result<com.example.data.remote.dto.SupabaseAuthResponse> = withContext(Dispatchers.IO) {
+        try {
+            if (!SupabaseClient.isConfigured) {
+                return@withContext Result.failure(Exception("Supabase credentials not configured"))
+            }
+
+            val metadata = mapOf(
+                "full_name" to fullName,
+                "role" to role
+            )
+            val request = com.example.data.remote.dto.SupabaseSignUpRequest(
+                email = email.trim(),
+                password = password,
+                data = metadata
+            )
+            val response = SupabaseClient.authService.signUp(request = request)
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                Result.success(body)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: ""
+                val msg = parseSupabaseErrorMessage(errorBody, response.code())
+                Result.failure(Exception(msg))
+            }
+        } catch (e: Exception) {
+            Log.e("InspectionRepository", "Supabase Sign Up error", e)
+            Result.failure(e)
+        }
+    }
+
+    private fun parseSupabaseErrorMessage(errorBody: String, httpCode: Int): String {
+        return try {
+            val json = JSONObject(errorBody)
+            when {
+                json.has("error_description") -> json.getString("error_description")
+                json.has("msg") -> json.getString("msg")
+                json.has("message") -> json.getString("message")
+                json.has("error") -> json.getString("error")
+                else -> "Authentication failed (HTTP $httpCode)"
+            }
+        } catch (_: Exception) {
+            when (httpCode) {
+                400 -> "Invalid email or password"
+                401 -> "Unauthorized or invalid credentials"
+                422 -> "Unprocessable entity - please check password length"
+                429 -> "Too many requests. Please wait a moment."
+                else -> "Supabase server responded with error code $httpCode"
+            }
+        }
     }
 
     suspend fun initializePrepopulatedDataIfEmpty() {
         if (dao.getCount() == 0) {
-            val initialList = getInitialSeedInspections()
-            dao.insertAll(initialList.map { it.toEntity() })
+            // Fetch live inspection records from remote Supabase
+            syncWithRemote()
         }
     }
 

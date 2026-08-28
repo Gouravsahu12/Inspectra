@@ -1,6 +1,7 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
@@ -24,6 +25,8 @@ import com.example.model.InspectorProfile
 import com.example.model.OCRResult
 import com.example.model.PackageSide
 import com.example.model.ProductCategory
+import com.example.model.UserProfile
+import com.example.model.UserRole
 import com.example.model.Violation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +40,20 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val repository: InspectionRepository
     private val ocrService: OCRService = MlKitOCRService()
+    private val sharedPrefs = application.getSharedPreferences("inspectra_auth_prefs", Context.MODE_PRIVATE)
+
+    // Navigation & Auth State declarations
+    private val _isLoggedIn = MutableStateFlow(false)
+    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    private val _currentUserProfile = MutableStateFlow(UserProfile())
+    val currentUserProfile: StateFlow<UserProfile> = _currentUserProfile.asStateFlow()
+
+    private val _authLoading = MutableStateFlow(false)
+    val authLoading: StateFlow<Boolean> = _authLoading.asStateFlow()
+
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError.asStateFlow()
 
     init {
         val db = AppDatabase.getDatabase(application)
@@ -44,21 +61,170 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             repository.initializePrepopulatedDataIfEmpty()
         }
+
+        // Restore persisted auth session if remember me was enabled
+        val isPersistedLogin = sharedPrefs.getBoolean("key_is_logged_in", false)
+        val savedEmail = sharedPrefs.getString("key_user_email", "") ?: ""
+        val savedRole = sharedPrefs.getString("key_user_role", UserRole.OFFICER.name) ?: UserRole.OFFICER.name
+        val savedName = sharedPrefs.getString("key_user_name", "") ?: ""
+
+        if (isPersistedLogin && savedEmail.isNotBlank()) {
+            val roleEnum = try { UserRole.valueOf(savedRole) } catch (_: Exception) { UserRole.OFFICER }
+            val resolvedName = if (savedName.isNotBlank()) savedName else savedEmail.substringBefore("@").replace(".", " ").capitalize()
+            val userId = "USR-${(Math.abs(savedEmail.hashCode()) % 90000 + 10000)}"
+            _currentUserProfile.value = UserProfile(
+                id = userId,
+                email = savedEmail,
+                name = resolvedName,
+                role = roleEnum
+            )
+            _isLoggedIn.value = true
+        } else {
+            _isLoggedIn.value = false
+        }
     }
 
     val inspections: StateFlow<List<InspectionRecord>> = repository.allInspections
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = InspectionRepository.getInitialSeedInspections()
+            initialValue = emptyList()
         )
-
-    // Navigation & Auth
-    private val _isLoggedIn = MutableStateFlow(true)
-    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
     private val _currentNavIndex = MutableStateFlow(0) // 0: Home, 1: History, 2: Analytics, 3: Profile
     val currentNavIndex: StateFlow<Int> = _currentNavIndex.asStateFlow()
+
+    fun setNavIndex(index: Int) {
+        _currentNavIndex.value = index
+    }
+
+    fun loginWithSupabase(
+        email: String,
+        password: String,
+        selectedRole: UserRole,
+        rememberMe: Boolean,
+        onResult: (success: Boolean, message: String?) -> Unit
+    ) {
+        if (_authLoading.value) return
+        _authLoading.value = true
+        _authError.value = null
+
+        viewModelScope.launch {
+            val result = repository.signInWithSupabase(email, password)
+            _authLoading.value = false
+            if (result.isSuccess) {
+                val response = result.getOrNull()
+                val user = response?.user
+                val metadata = user?.userMetadata
+                
+                val metaFullName = metadata?.get("full_name") as? String
+                    ?: metadata?.get("name") as? String
+                    ?: email.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() }
+                
+                val metaRoleString = metadata?.get("role") as? String
+                val resolvedRole = if (metaRoleString != null) {
+                    try { UserRole.valueOf(metaRoleString.uppercase()) } catch (_: Exception) { selectedRole }
+                } else {
+                    selectedRole
+                }
+
+                val userId = user?.id?.take(8)?.uppercase() ?: "USR-${(Math.abs(email.hashCode()) % 90000 + 10000)}"
+                val profile = UserProfile(
+                    id = userId,
+                    email = user?.email ?: email,
+                    name = metaFullName,
+                    role = resolvedRole
+                )
+                _currentUserProfile.value = profile
+                _isLoggedIn.value = true
+
+                if (rememberMe) {
+                    sharedPrefs.edit()
+                        .putBoolean("key_is_logged_in", true)
+                        .putString("key_user_email", profile.email)
+                        .putString("key_user_role", profile.role.name)
+                        .putString("key_user_name", profile.name)
+                        .apply()
+                } else {
+                    sharedPrefs.edit().clear().apply()
+                }
+
+                // Sync user inspections from Supabase
+                syncWithCloud()
+                onResult(true, null)
+            } else {
+                val err = result.exceptionOrNull()?.localizedMessage ?: "Invalid login credentials"
+                _authError.value = err
+                onResult(false, err)
+            }
+        }
+    }
+
+    fun registerWithSupabase(
+        email: String,
+        password: String,
+        role: UserRole,
+        fullName: String,
+        rememberMe: Boolean,
+        onResult: (success: Boolean, message: String?) -> Unit
+    ) {
+        if (_authLoading.value) return
+        _authLoading.value = true
+        _authError.value = null
+
+        viewModelScope.launch {
+            val result = repository.signUpWithSupabase(
+                email = email,
+                password = password,
+                role = role.name,
+                fullName = fullName
+            )
+            _authLoading.value = false
+            if (result.isSuccess) {
+                val response = result.getOrNull()
+                val user = response?.user
+
+                val userId = user?.id?.take(8)?.uppercase() ?: "USR-${(Math.abs(email.hashCode()) % 90000 + 10000)}"
+                val profile = UserProfile(
+                    id = userId,
+                    email = user?.email ?: email,
+                    name = if (fullName.isNotBlank()) fullName else email.substringBefore("@"),
+                    role = role
+                )
+                _currentUserProfile.value = profile
+                _isLoggedIn.value = true
+
+                if (rememberMe) {
+                    sharedPrefs.edit()
+                        .putBoolean("key_is_logged_in", true)
+                        .putString("key_user_email", profile.email)
+                        .putString("key_user_role", profile.role.name)
+                        .putString("key_user_name", profile.name)
+                        .apply()
+                } else {
+                    sharedPrefs.edit().clear().apply()
+                }
+
+                syncWithCloud()
+                onResult(true, "Registration successful!")
+            } else {
+                val err = result.exceptionOrNull()?.localizedMessage ?: "Registration failed"
+                _authError.value = err
+                onResult(false, err)
+            }
+        }
+    }
+
+    fun logout() {
+        sharedPrefs.edit().clear().apply()
+        _currentUserProfile.value = UserProfile()
+        _isLoggedIn.value = false
+        _currentNavIndex.value = 0
+    }
+
+    fun clearAuthError() {
+        _authError.value = null
+    }
 
     private val _inspectorProfile = MutableStateFlow(InspectorProfile())
     val inspectorProfile: StateFlow<InspectorProfile> = _inspectorProfile.asStateFlow()
@@ -93,22 +259,11 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
     private val _selectedSampleType = MutableStateFlow("detergent") // "detergent", "oil", "biscuits"
     val selectedSampleType: StateFlow<String> = _selectedSampleType.asStateFlow()
 
-    private val _capturedImages = MutableStateFlow(listOf("img_detergent_package"))
+    private val _capturedImages = MutableStateFlow<List<String>>(emptyList())
     val capturedImages: StateFlow<List<String>> = _capturedImages.asStateFlow()
 
     // Rich multi-view captured product images
-    private val _productImages = MutableStateFlow<List<CapturedProductImage>>(
-        listOf(
-            CapturedProductImage(
-                id = "init_front_01",
-                uri = "img_detergent_package",
-                side = PackageSide.FRONT,
-                isSampleAsset = true,
-                resolution = "1920x1080",
-                fileSizeKb = 284L
-            )
-        )
-    )
+    private val _productImages = MutableStateFlow<List<CapturedProductImage>>(emptyList())
     val productImages: StateFlow<List<CapturedProductImage>> = _productImages.asStateFlow()
 
     // Camera & Review Sub-states
@@ -132,10 +287,10 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _qualityMetrics = MutableStateFlow(
         listOf(
-            ImageQualityMetric("Image Clarity & OCR Fidelity", true, "1920x1080 px (Optimal for statutory font OCR)"),
-            ImageQualityMetric("Lighting & Glare Assessment", true, "Diffused packaging lighting (Luma: 142/255)"),
-            ImageQualityMetric("Orientation & Aspect Normalization", true, "Corrected to standard portrait plane"),
-            ImageQualityMetric("Panel Boundary & Framing", true, "Statutory declaration zones captured")
+            ImageQualityMetric("Image Clarity & Non-Blank Check", true, "Passed: High contrast & text verified (Not black/blank)"),
+            ImageQualityMetric("Lighting & Glare Assessment", true, "Passed: Uniform packaging lighting (Luma > 120/255)"),
+            ImageQualityMetric("Product & Text Detection", true, "Passed: Product packaging & statutory text detected"),
+            ImageQualityMetric("Panel Boundary & Standard Framing", true, "Passed: Statutory declaration zones aligned")
         )
     )
     val qualityMetrics: StateFlow<List<ImageQualityMetric>> = _qualityMetrics.asStateFlow()
@@ -191,11 +346,36 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
     private val _reportNoticeIssued = MutableStateFlow(false)
     val reportNoticeIssued: StateFlow<Boolean> = _reportNoticeIssued.asStateFlow()
 
+    // Remote Supabase Cloud Sync state
+    private val _syncStatusMessage = MutableStateFlow<String?>("Connected to Supabase")
+    val syncStatusMessage: StateFlow<String?> = _syncStatusMessage.asStateFlow()
+
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    fun syncWithCloud() {
+        if (_isSyncing.value) return
+        viewModelScope.launch {
+            _isSyncing.value = true
+            _syncStatusMessage.value = "Syncing with Supabase..."
+            val result = repository.syncWithRemote()
+            if (result.isSuccess) {
+                val count = result.getOrNull() ?: 0
+                _syncStatusMessage.value = "Synced with Supabase ($count records updated)"
+            } else {
+                _syncStatusMessage.value = "Offline mode (cached locally)"
+            }
+            delay(3000)
+            _isSyncing.value = false
+        }
+    }
+
     fun startNewInspection() {
         val nextId = "INS-2026-000" + (125 + (0..99).random())
         _activeInspectionId.value = nextId
         _inspectionCreatedAt.value = System.currentTimeMillis()
-        _wizardStep.value = 1
+        val isOfficer = _currentUserProfile.value.role == UserRole.OFFICER
+        _wizardStep.value = if (isOfficer) 1 else 2
         _isInspectionWizardOpen.value = true
         _violations.value = emptyList()
         _complianceScore.value = 100
@@ -208,7 +388,8 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
         _showReportScreen.value = false
         _showEvidenceViewer.value = false
         _selectedViolation.value = null
-        loadSampleImages("detergent")
+        _productImages.value = emptyList()
+        _capturedImages.value = emptyList()
     }
 
     fun closeInspectionWizard() {
@@ -227,22 +408,6 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun dismissDiscardDialog() {
         _showDiscardDialog.value = false
-    }
-
-    fun setBottomNavIndex(index: Int) {
-        _currentNavIndex.value = index
-    }
-
-    fun setNavIndex(index: Int) {
-        _currentNavIndex.value = index
-    }
-
-    fun login(username: String = "LM-OFFICER-8492", password: String = "") {
-        _isLoggedIn.value = true
-    }
-
-    fun logout() {
-        _isLoggedIn.value = false
     }
 
     fun closeWizard() {

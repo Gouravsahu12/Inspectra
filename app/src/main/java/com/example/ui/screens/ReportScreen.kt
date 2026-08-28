@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.ComplianceStatus
 import com.example.model.FieldStatus
+import com.example.model.UserRole
 import com.example.ui.components.InspectraGovBadge
 import com.example.ui.components.StatusChip
 import com.example.ui.theme.CompliantGreen
@@ -88,7 +89,8 @@ fun ReportScreen(
 ) {
     val context = LocalContext.current
     val inspectionId by viewModel.activeInspectionId.collectAsState()
-    val profile by viewModel.inspectorProfile.collectAsState()
+    val currentUserProfile by viewModel.currentUserProfile.collectAsState()
+    val isOfficer = currentUserProfile.role == UserRole.OFFICER
     val location by viewModel.locationName.collectAsState()
     val store by viewModel.storeName.collectAsState()
     val category by viewModel.selectedCategory.collectAsState()
@@ -139,7 +141,7 @@ fun ReportScreen(
                             )
                         )
                         Text(
-                            text = "Form LM-IR/2026 • Official Government Record",
+                            text = if (isOfficer) "Form LM-IR/2026 • Official Government Record" else "Packaging Verification Report • User Record",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = Slate400,
                                 fontSize = 11.sp
@@ -194,7 +196,7 @@ fun ReportScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Report generated and archived to Legal Metrology Registry: $inspectionId.pdf",
+                        text = "Report generated and archived: $inspectionId.pdf",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = Color.White,
                             fontWeight = FontWeight.Medium
@@ -231,51 +233,80 @@ fun ReportScreen(
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "GOVERNMENT OF INDIA",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = Slate700,
-                                letterSpacing = 1.sp
+                        if (isOfficer) {
+                            Text(
+                                text = "GOVERNMENT OF INDIA",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Slate700,
+                                    letterSpacing = 1.sp
+                                )
                             )
-                        )
-                        Text(
-                            text = "DEPARTMENT OF CONSUMER AFFAIRS",
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = Navy900
+                            Text(
+                                text = "DEPARTMENT OF CONSUMER AFFAIRS",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy900
+                                )
                             )
-                        )
-                        Text(
-                            text = "LEGAL METROLOGY ENFORCEMENT DIVISION",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = Slate600,
-                                fontSize = 10.sp
+                            Text(
+                                text = "LEGAL METROLOGY ENFORCEMENT DIVISION",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Slate600,
+                                    fontSize = 10.sp
+                                )
                             )
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "OFFICIAL PACKAGED COMMODITIES INSPECTION REPORT (FORM LM-IR/2026)",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = Navy700,
-                                fontSize = 10.sp
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "OFFICIAL PACKAGED COMMODITIES INSPECTION REPORT (FORM LM-IR/2026)",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy700,
+                                    fontSize = 10.sp
+                                )
                             )
-                        )
+                        } else {
+                            Text(
+                                text = "LEGAL METROLOGY COMPLIANCE VERIFICATION",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy900
+                                )
+                            )
+                            Text(
+                                text = "PACKAGED COMMODITIES DIGITAL AUDIT RECORD",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy700,
+                                    fontSize = 10.sp
+                                )
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
                     HorizontalDivider(color = Slate200)
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Inspection Details Metadata Grid
+                    // Inspection Details & User Details Metadata Grid
                     ReportRow(label = "Inspection ID", value = inspectionId, isBold = true)
                     ReportRow(label = "Date & Time", value = currentDateStr)
-                    ReportRow(label = "Inspecting Officer", value = "${profile.name} (${profile.id})")
-                    ReportRow(label = "Jurisdiction Zone", value = profile.jurisdiction)
-                    ReportRow(label = "Establishment", value = store)
-                    ReportRow(label = "Premises Address", value = location)
+                    ReportRow(label = "Full Name", value = currentUserProfile.name, isBold = true)
+                    ReportRow(label = "User ID", value = currentUserProfile.id)
+                    ReportRow(label = "Role", value = currentUserProfile.role.displayName)
+
+                    if (isOfficer) {
+                        ReportRow(label = "Inspecting Officer", value = "${currentUserProfile.name} (${currentUserProfile.id})")
+                        ReportRow(label = "Jurisdiction Zone", value = currentUserProfile.jurisdiction)
+                    }
+
+                    if (store.isNotBlank()) {
+                        ReportRow(label = "Establishment", value = store)
+                    }
+                    if (location.isNotBlank()) {
+                        ReportRow(label = "Premises Address", value = location)
+                    }
                     ReportRow(label = "Commodity Category", value = "${category.displayName} (${category.code})")
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -410,7 +441,7 @@ fun ReportScreen(
                     HorizontalDivider(color = Slate200)
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Digital Signature & Seal Box
+                    // Digital Verification / Signature Box
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -424,7 +455,7 @@ fun ReportScreen(
                             ) {
                                 Column {
                                     Text(
-                                        text = "DIGITALLY SIGNED",
+                                        text = if (isOfficer) "DIGITALLY SIGNED" else "VERIFIED AUDIT",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
@@ -432,7 +463,7 @@ fun ReportScreen(
                                         )
                                     )
                                     Text(
-                                        text = "DSC Token: GOI-LM-8492-2026",
+                                        text = if (isOfficer) "DSC Token: GOI-LM-8492-2026" else "Record ID: ${currentUserProfile.id}",
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             fontSize = 9.sp,
                                             color = Slate500
@@ -444,14 +475,14 @@ fun ReportScreen(
 
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                text = profile.name,
+                                text = currentUserProfile.name,
                                 style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = Slate900
                                 )
                             )
                             Text(
-                                text = profile.designation,
+                                text = if (isOfficer) "Senior Legal Metrology Officer" else "${currentUserProfile.role.displayName} • Verified User",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 10.sp,
                                     color = Slate500
@@ -465,7 +496,7 @@ fun ReportScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Action Buttons
-            if (!noticeIssued && violations.isNotEmpty()) {
+            if (isOfficer && !noticeIssued && violations.isNotEmpty()) {
                 Button(
                     onClick = {
                         viewModel.issueEnforcementNotice()

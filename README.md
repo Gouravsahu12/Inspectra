@@ -231,3 +231,69 @@ INSPECTRA follows a mobile-first cloud architecture.
               │   Gemini AI  │       │ Compliance   │
               │  Vision/OCR  │       │    Engine    │
               └──────────────┘       └──────────────┘
+
+🛠️ Tech Stack
+📱 Mobile
+Technology	Purpose
+Kotlin	Application development
+Jetpack Compose	Modern UI
+Material 3	UI components
+MVVM	Application architecture
+Room	Local/offline data
+Android Camera	Image capture
+☁️ Backend
+Technology	Purpose
+Supabase Auth	Authentication
+PostgreSQL	Primary database
+Supabase Storage	Image storage
+Row Level Security	Data protection
+Edge Functions	Server-side logic
+🤖 AI & Intelligence
+Technology	Purpose
+Gemini	AI-powered image understanding
+OCR	Text extraction
+Compliance Engine	Automated rule evaluation
+
+🔒 Security
+
+Security is a core part of INSPECTRA.
+
+The backend uses:
+
+Row Level Security
+
+Database access is protected using PostgreSQL Row Level Security policies.
+
+Users cannot simply modify an officer_id and access another inspector's records.
+
+Private Image Storage
+
+Inspection images are stored in a private storage bucket.
+
+Access is restricted according to inspection ownership.
+
+Authentication
+
+Authentication is handled by Supabase Auth rather than custom password storage.
+
+Server-Side Secrets
+
+Sensitive credentials such as AI API keys are never intended to be embedded inside the Android application.
+
+Privileged operations are performed through trusted server-side functions.
+
+🎯 Vision
+
+INSPECTRA aims to evolve from a digital inspection application into an intelligent inspection decision-support platform.
+
+The long-term vision is:
+
+Capture once. Understand automatically. Verify intelligently. Decide confidently.
+
+By combining mobile computing, computer vision, AI, structured evidence, and compliance rules, INSPECTRA aims to reduce repetitive manual work while improving consistency, traceability, and transparency in field inspections.
+
+📄 License
+
+This project is currently under development.
+
+License information will be added before public production release.

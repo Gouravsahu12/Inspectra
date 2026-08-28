@@ -1,0 +1,13 @@
+project_id = "ftasqoewtueewpspebux"
+
+[functions.analyze-inspection]
+verify_jwt = true
+entrypoint = "./functions/analyze-inspection/index.ts"
+
+[functions.evaluate-compliance]
+verify_jwt = true
+entrypoint = "./functions/evaluate-compliance/index.ts"
+
+[functions.generate-report]
+verify_jwt = true
+entrypoint = "./functions/generate-report/index.ts"

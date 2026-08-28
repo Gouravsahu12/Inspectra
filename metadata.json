@@ -1,0 +1,6 @@
+{
+  "name": "INSPECTRA",
+  "description": "AI-Powered Legal Metrology Inspection Assistant for Packaged Commodities (SIH26034)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

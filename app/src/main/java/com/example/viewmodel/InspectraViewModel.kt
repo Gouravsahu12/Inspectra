@@ -2,6 +2,10 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
@@ -9,6 +13,7 @@ import com.example.data.ocr.ImagePreprocessor
 import com.example.data.ocr.MlKitOCRService
 import com.example.data.ocr.MultiImageAggregator
 import com.example.data.ocr.OCRService
+import com.example.data.remote.dto.AnalyticsRpcResponse
 import com.example.data.repository.InspectionRepository
 import com.example.engine.ComplianceEngine
 import com.example.model.AnalysisProgressState
@@ -28,6 +33,8 @@ import com.example.model.ProductCategory
 import com.example.model.UserProfile
 import com.example.model.UserRole
 import com.example.model.Violation
+import com.example.util.PdfReportGenerator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,6 +42,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.InputStream
+import java.util.UUID
 
 class InspectraViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -60,6 +72,7 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
         repository = InspectionRepository(db.inspectionDao())
         viewModelScope.launch {
             repository.initializePrepopulatedDataIfEmpty()
+            fetchAnalytics()
         }
 
         // Restore persisted auth session if remember me was enabled
@@ -72,11 +85,13 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
             val roleEnum = try { UserRole.valueOf(savedRole) } catch (_: Exception) { UserRole.OFFICER }
             val resolvedName = if (savedName.isNotBlank()) savedName else savedEmail.substringBefore("@").replace(".", " ").capitalize()
             val userId = "USR-${(Math.abs(savedEmail.hashCode()) % 90000 + 10000)}"
+            val savedPhone = sharedPrefs.getString("key_user_phone_$savedEmail", "") ?: ""
             _currentUserProfile.value = UserProfile(
                 id = userId,
                 email = savedEmail,
                 name = resolvedName,
-                role = roleEnum
+                role = roleEnum,
+                phoneNumber = savedPhone
             )
             _isLoggedIn.value = true
         } else {
@@ -91,11 +106,47 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
             initialValue = emptyList()
         )
 
+    val pendingSyncCount: StateFlow<Int> = repository.pendingSyncCount
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 0
+        )
+
+    // Analytics RPC State
+    private val _analyticsData = MutableStateFlow<AnalyticsRpcResponse?>(null)
+    val analyticsData: StateFlow<AnalyticsRpcResponse?> = _analyticsData.asStateFlow()
+
+    private val _analyticsLoading = MutableStateFlow(false)
+    val analyticsLoading: StateFlow<Boolean> = _analyticsLoading.asStateFlow()
+
+    private val _analyticsError = MutableStateFlow<String?>(null)
+    val analyticsError: StateFlow<String?> = _analyticsError.asStateFlow()
+
+    fun fetchAnalytics() {
+        if (_analyticsLoading.value) return
+        viewModelScope.launch {
+            _analyticsLoading.value = true
+            _analyticsError.value = null
+            val result = repository.fetchAnalytics()
+            _analyticsLoading.value = false
+            if (result.isSuccess) {
+                _analyticsData.value = result.getOrNull()
+            } else {
+                val err = result.exceptionOrNull()?.localizedMessage ?: "Failed to load analytics"
+                _analyticsError.value = err
+            }
+        }
+    }
+
     private val _currentNavIndex = MutableStateFlow(0) // 0: Home, 1: History, 2: Analytics, 3: Profile
     val currentNavIndex: StateFlow<Int> = _currentNavIndex.asStateFlow()
 
     fun setNavIndex(index: Int) {
         _currentNavIndex.value = index
+        if (index == 2) {
+            fetchAnalytics()
+        }
     }
 
     fun loginWithSupabase(
@@ -129,11 +180,13 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 val userId = user?.id?.take(8)?.uppercase() ?: "USR-${(Math.abs(email.hashCode()) % 90000 + 10000)}"
+                val savedPhone = sharedPrefs.getString("key_user_phone_$email", "") ?: ""
                 val profile = UserProfile(
                     id = userId,
                     email = user?.email ?: email,
                     name = metaFullName,
-                    role = resolvedRole
+                    role = resolvedRole,
+                    phoneNumber = savedPhone
                 )
                 _currentUserProfile.value = profile
                 _isLoggedIn.value = true
@@ -222,6 +275,46 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
         _currentNavIndex.value = 0
     }
 
+    fun updateContactNumber(phone: String) {
+        val trimmed = phone.trim()
+        val current = _currentUserProfile.value
+        _currentUserProfile.value = current.copy(phoneNumber = trimmed)
+        if (current.email.isNotBlank()) {
+            sharedPrefs.edit().putString("key_user_phone_${current.email}", trimmed).apply()
+        }
+    }
+
+    fun changePassword(
+        oldPass: String,
+        newPass: String,
+        confirmPass: String,
+        onResult: (success: Boolean, message: String) -> Unit
+    ) {
+        if (oldPass.isBlank()) {
+            onResult(false, "Please enter your current password")
+            return
+        }
+        if (newPass.length < 6) {
+            onResult(false, "New password must be at least 6 characters long")
+            return
+        }
+        if (newPass != confirmPass) {
+            onResult(false, "New passwords do not match")
+            return
+        }
+
+        viewModelScope.launch {
+            val result = repository.updatePassword(newPass)
+            if (result.isSuccess) {
+                sharedPrefs.edit().putString("key_user_pass", newPass).apply()
+                onResult(true, "Password changed successfully!")
+            } else {
+                val err = result.exceptionOrNull()?.localizedMessage ?: "Failed to update password"
+                onResult(false, err)
+            }
+        }
+    }
+
     fun clearAuthError() {
         _authError.value = null
     }
@@ -229,12 +322,35 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
     private val _inspectorProfile = MutableStateFlow(InspectorProfile())
     val inspectorProfile: StateFlow<InspectorProfile> = _inspectorProfile.asStateFlow()
 
-    // History filter & search
+    // History filter, search & loading state
     private val _historySearchQuery = MutableStateFlow("")
     val historySearchQuery: StateFlow<String> = _historySearchQuery.asStateFlow()
 
     private val _historyStatusFilter = MutableStateFlow<ComplianceStatus?>(null)
     val historyStatusFilter: StateFlow<ComplianceStatus?> = _historyStatusFilter.asStateFlow()
+
+    private val _historyLoading = MutableStateFlow(false)
+    val historyLoading: StateFlow<Boolean> = _historyLoading.asStateFlow()
+
+    private val _historyError = MutableStateFlow<String?>(null)
+    val historyError: StateFlow<String?> = _historyError.asStateFlow()
+
+    fun refreshHistory() {
+        if (_historyLoading.value) return
+        viewModelScope.launch {
+            _historyLoading.value = true
+            _historyError.value = null
+            val result = repository.syncWithRemote()
+            _historyLoading.value = false
+            if (result.isFailure) {
+                // If offline or network issue, we still display cached records
+                val msg = result.exceptionOrNull()?.localizedMessage
+                if (msg != null && !msg.contains("not configured")) {
+                    _historyError.value = "Could not reach remote cloud. Showing local history."
+                }
+            }
+        }
+    }
 
     // Active Inspection Workflow State
     private val _isInspectionWizardOpen = MutableStateFlow(false)
@@ -374,8 +490,7 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
         val nextId = "INS-2026-000" + (125 + (0..99).random())
         _activeInspectionId.value = nextId
         _inspectionCreatedAt.value = System.currentTimeMillis()
-        val isOfficer = _currentUserProfile.value.role == UserRole.OFFICER
-        _wizardStep.value = if (isOfficer) 1 else 2
+        _wizardStep.value = 1 // Step 1: Category & Scope for all roles
         _isInspectionWizardOpen.value = true
         _violations.value = emptyList()
         _complianceScore.value = 100
@@ -390,6 +505,37 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
         _selectedViolation.value = null
         _productImages.value = emptyList()
         _capturedImages.value = emptyList()
+    }
+
+    fun completeAuditAndReturn() {
+        saveInspectionToRegistry()
+        closeInspectionWizard()
+        _showReportScreen.value = false
+        _showEvidenceViewer.value = false
+    }
+
+    fun buildCurrentInspectionRecord(): InspectionRecord {
+        val currentFields = _extractedFields.value
+        return InspectionRecord(
+            id = _activeInspectionId.value,
+            productName = currentFields.find { it.id == "product_name" }?.extractedValue.takeIf { !it.isNullOrBlank() } ?: "Packaged Commodity",
+            brandManufacturer = currentFields.find { it.id == "manufacturer_name" }?.extractedValue.takeIf { !it.isNullOrBlank() } ?: "Manufacturer Details",
+            category = _selectedCategory.value,
+            locationName = _locationName.value,
+            facilityType = _facilityType.value,
+            storeName = _storeName.value,
+            inspectorId = _currentUserProfile.value.id,
+            inspectorName = _currentUserProfile.value.name,
+            timestamp = System.currentTimeMillis(),
+            complianceScore = _complianceScore.value,
+            status = _complianceStatus.value,
+            extractedFields = currentFields,
+            violations = _violations.value,
+            imageDrawableNames = _capturedImages.value,
+            officerNotes = "Inspection completed and verified. LMPC 2011 statutory validation evaluated.",
+            isReportGenerated = true,
+            manufacturerRiskLevel = if (_complianceStatus.value == ComplianceStatus.NON_COMPLIANT) "HIGH" else "LOW"
+        )
     }
 
     fun closeInspectionWizard() {
@@ -605,8 +751,9 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
 
     /**
      * Executes the end-to-end Product Image Analysis Pipeline:
-     * Captured Images -> Upload/Storage Association -> Image Preprocessing ->
-     * OCR Text Extraction -> Statutory Field Extraction -> Conflict Resolution ->
+     * Captured Images -> Upload to Supabase 'scan-images' Storage ->
+     * Remote Edge Function OCR 'process-scan-image' / ML Kit ->
+     * Statutory Field Extraction -> Conflict Resolution ->
      * Structured Data ready for Inspector Review.
      */
     fun runAiAnalysis() {
@@ -616,7 +763,11 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
         _wizardStep.value = 3
         viewModelScope.launch {
             try {
-                // Step 1: Uploading & Associating Images
+                val user = _currentUserProfile.value
+                val userId = if (user.id.isNotBlank()) user.id else "anonymous"
+                val scanId = _activeInspectionId.value
+
+                // Step 1: Uploading to Supabase 'scan-images' Bucket & Associating Images
                 val completed = mutableSetOf<AnalysisStep>()
                 _analysisProgressState.value = AnalysisProgressState(
                     currentStep = AnalysisStep.UPLOADING,
@@ -625,7 +776,29 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                     totalImages = currentImages.size,
                     processedImages = 0
                 )
-                delay(400) // Brief UI stage progression
+
+                var firstUploadedPath: String? = null
+                for ((idx, img) in currentImages.withIndex()) {
+                    try {
+                        val imageBytes = withContext(Dispatchers.IO) {
+                            readImageBytes(getApplication(), img)
+                        }
+                        if (imageBytes != null && imageBytes.isNotEmpty()) {
+                            val fileName = "${scanId}_${img.side.name.lowercase()}.jpg"
+                            val uploadRes = repository.uploadScanImage(userId, scanId, fileName, imageBytes)
+                            if (uploadRes.isSuccess && firstUploadedPath == null) {
+                                firstUploadedPath = uploadRes.getOrNull()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("InspectraVM", "Image upload exception: ${e.message}")
+                    }
+                    _analysisProgressState.value = _analysisProgressState.value.copy(
+                        processedImages = idx + 1
+                    )
+                }
+
+                delay(300)
                 completed.add(AnalysisStep.UPLOADING)
 
                 // Step 2: Image Preprocessing (orientation, downscaling, contrast)
@@ -638,19 +811,47 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                     ImagePreprocessor.preprocessImage(getApplication(), img)
                 }
 
-                // Update quality metrics from real preprocessed image
                 val aggMetrics = preprocessedResults.firstOrNull()?.qualityMetrics
                 if (aggMetrics != null) {
                     _qualityMetrics.value = aggMetrics
                 }
-                delay(450)
+                delay(350)
                 completed.add(AnalysisStep.PREPROCESSING)
 
-                // Step 3: Text Extraction (ML Kit Latin + Devanagari OCR)
+                // Step 3: Text Extraction (Supabase Edge Function 'process-scan-image' + ML Kit fallback)
                 _analysisProgressState.value = _analysisProgressState.value.copy(
                     currentStep = AnalysisStep.OCR_EXTRACTION,
                     completedSteps = completed
                 )
+
+                // Try calling remote process-scan-image edge function if we have an uploaded path
+                var remoteOcrSucceeded = false
+                if (firstUploadedPath != null) {
+                    try {
+                        val remoteResult = repository.processScanImageRemote(scanId, firstUploadedPath, userId)
+                        if (remoteResult.isSuccess) {
+                            val remoteData = remoteResult.getOrNull()
+                            if (remoteData != null && !remoteData.fields.isNullOrEmpty()) {
+                                remoteOcrSucceeded = true
+                                val domainFields = remoteData.fields.map { dto ->
+                                    ExtractedField(
+                                        id = dto.id,
+                                        fieldName = dto.fieldName ?: dto.fieldNameAlt ?: "",
+                                        standardLabel = dto.standardLabel ?: dto.standardLabelAlt ?: "",
+                                        extractedValue = dto.extractedValue ?: dto.extractedValueAlt ?: "",
+                                        confidence = dto.confidence,
+                                        status = try { FieldStatus.valueOf(dto.status ?: "VERIFIED") } catch (_: Exception) { FieldStatus.VERIFIED },
+                                        ruleReference = dto.ruleReference ?: dto.ruleReferenceAlt ?: "",
+                                        boundingBoxLabel = dto.boundingBoxLabel ?: dto.boundingBoxLabelAlt ?: ""
+                                    )
+                                }
+                                _extractedFields.value = domainFields
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("InspectraVM", "Remote OCR edge function note: ${e.message}")
+                    }
+                }
 
                 val ocrResultsList = mutableListOf<OCRResult>()
                 for ((idx, img) in currentImages.withIndex()) {
@@ -658,12 +859,9 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                         ?: ImagePreprocessor.preprocessImage(getApplication(), img)
                     val ocrResult = ocrService.recognizeText(getApplication(), img, preprocessed)
                     ocrResultsList.add(ocrResult)
-                    _analysisProgressState.value = _analysisProgressState.value.copy(
-                        processedImages = idx + 1
-                    )
                 }
                 _rawOcrResults.value = ocrResultsList
-                delay(500)
+                delay(400)
                 completed.add(AnalysisStep.OCR_EXTRACTION)
 
                 // Step 4: Statutory Field Identification & NLP
@@ -671,7 +869,7 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                     currentStep = AnalysisStep.FIELD_IDENTIFICATION,
                     completedSteps = completed
                 )
-                delay(450)
+                delay(350)
                 completed.add(AnalysisStep.FIELD_IDENTIFICATION)
 
                 // Step 5: Multi-view Aggregation & Conflict Verification
@@ -680,25 +878,28 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                     completedSteps = completed
                 )
 
-                val aggregatedData = MultiImageAggregator.aggregateMultiViewResults(
-                    inspectionId = _activeInspectionId.value,
-                    ocrResults = ocrResultsList
-                )
-                _extractedPackageData.value = aggregatedData
-                _extractedFields.value = aggregatedData.fields
-                _selectedCategory.value = aggregatedData.suggestedCategory
+                if (!remoteOcrSucceeded) {
+                    val aggregatedData = MultiImageAggregator.aggregateMultiViewResults(
+                        inspectionId = scanId,
+                        ocrResults = ocrResultsList,
+                        category = _selectedCategory.value
+                    )
+                    _extractedPackageData.value = aggregatedData
+                    _extractedFields.value = aggregatedData.fields
+                }
 
-                delay(400)
+                delay(300)
                 completed.add(AnalysisStep.CONFLICT_RESOLUTION)
 
                 // Step 6: Ready for Inspector Review
+                val finalLanguages = _extractedPackageData.value?.detectedLanguages ?: listOf("en", "hi")
                 _analysisProgressState.value = _analysisProgressState.value.copy(
                     currentStep = AnalysisStep.READY,
                     completedSteps = completed,
                     isProcessing = false,
-                    detectedLanguages = aggregatedData.detectedLanguages
+                    detectedLanguages = finalLanguages
                 )
-                delay(300)
+                delay(200)
 
                 // Navigate to Step 4 (Extracted Declarations Review Screen)
                 _wizardStep.value = 4
@@ -709,6 +910,30 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                     errorMessage = e.localizedMessage ?: "Unable to complete package analysis. Please retry."
                 )
             }
+        }
+    }
+
+    private fun readImageBytes(context: Context, image: CapturedProductImage): ByteArray? {
+        return try {
+            if (image.isSampleAsset || image.uri.startsWith("img_")) {
+                val drawableRes = when (image.uri) {
+                    "img_detergent_package" -> com.example.R.drawable.img_detergent_package
+                    "img_edible_oil_package" -> com.example.R.drawable.img_edible_oil_package
+                    "img_snack_package" -> com.example.R.drawable.img_snack_package
+                    else -> com.example.R.drawable.img_detergent_package
+                }
+                val bmp = BitmapFactory.decodeResource(context.resources, drawableRes) ?: return null
+                val stream = ByteArrayOutputStream()
+                bmp.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+                stream.toByteArray()
+            } else {
+                val uri = Uri.parse(image.uri)
+                val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+                inputStream?.use { it.readBytes() }
+            }
+        } catch (e: Exception) {
+            Log.e("InspectraVM", "Failed to read image bytes: ${e.message}")
+            null
         }
     }
 
@@ -766,7 +991,7 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
 
     /**
      * Inspector completed review of Extracted Information and proceeds
-     * to the deterministic Legal Metrology Compliance Engine check.
+     * to the Legal Metrology Compliance Engine check (Local + Remote Supabase 'check-compliance').
      */
     fun proceedToComplianceCheck() {
         val currentFields = _extractedFields.value
@@ -784,10 +1009,31 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
         _complianceStatus.value = ComplianceEngine.determineStatus(score, detectedViolations)
 
         _wizardStep.value = 5 // Step 5: Compliance Result & Violations
+
+        // Trigger remote compliance check asynchronously to sync validation rules
+        viewModelScope.launch {
+            try {
+                repository.checkComplianceRemote(
+                    scanId = _activeInspectionId.value,
+                    productName = currentFields.find { it.id == "product_name" }?.extractedValue ?: "Packaged Commodity",
+                    category = _selectedCategory.value.name,
+                    fields = currentFields
+                )
+            } catch (e: Exception) {
+                Log.w("InspectraVM", "Remote compliance check note: ${e.message}")
+            }
+        }
+
+        // Automatically save to database and cloud scan_history upon completion
+        saveInspectionToRegistry()
     }
 
     fun saveInspectionToRegistry() {
         viewModelScope.launch {
+            val user = _currentUserProfile.value
+            val currentUserId = if (user.id.isNotBlank()) user.id else _inspectorProfile.value.id
+            val currentUserName = if (user.name.isNotBlank()) user.name else _inspectorProfile.value.name
+
             val record = InspectionRecord(
                 id = _activeInspectionId.value,
                 productName = _extractedFields.value.find { it.id == "product_name" }?.extractedValue ?: "Packaged Product",
@@ -796,8 +1042,8 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                 locationName = _locationName.value,
                 facilityType = _facilityType.value,
                 storeName = _storeName.value,
-                inspectorId = _inspectorProfile.value.id,
-                inspectorName = _inspectorProfile.value.name,
+                inspectorId = currentUserId,
+                inspectorName = currentUserName,
                 timestamp = System.currentTimeMillis(),
                 complianceScore = _complianceScore.value,
                 status = _complianceStatus.value,
@@ -809,6 +1055,7 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
                 manufacturerRiskLevel = if (_complianceStatus.value == ComplianceStatus.NON_COMPLIANT) "HIGH" else "LOW"
             )
             repository.insertInspection(record)
+            fetchAnalytics()
         }
     }
 
@@ -822,6 +1069,23 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun toggleReportScreen(show: Boolean) {
         _showReportScreen.value = show
+    }
+
+    fun openInspectionReport(record: InspectionRecord) {
+        _activeInspectionId.value = record.id
+        _selectedCategory.value = record.category
+        _locationName.value = record.locationName
+        _facilityType.value = record.facilityType
+        _storeName.value = record.storeName
+        _complianceScore.value = record.complianceScore
+        _complianceStatus.value = record.status
+        _extractedFields.value = record.extractedFields
+        _violations.value = record.violations
+        _capturedImages.value = record.imageDrawableNames
+        _selectedHistoryItem.value = record
+        _isInspectionWizardOpen.value = false
+        _showEvidenceViewer.value = false
+        _showReportScreen.value = true
     }
 
     fun selectHistoryItem(item: InspectionRecord?) {
@@ -838,5 +1102,23 @@ class InspectraViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setHistoryStatusFilter(status: ComplianceStatus?) {
         _historyStatusFilter.value = status
+    }
+
+    fun generateReport(
+        record: InspectionRecord,
+        context: Context,
+        userProfile: UserProfile,
+        onResult: (File?) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val file = PdfReportGenerator.generatePdfReport(context, record, userProfile)
+            if (file != null) {
+                val updated = record.copy(isReportGenerated = true, reportUrl = file.absolutePath)
+                repository.insertInspection(updated)
+            }
+            withContext(Dispatchers.Main) {
+                onResult(file)
+            }
+        }
     }
 }

@@ -34,6 +34,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.Violation
 import com.example.ui.components.SeverityChip
+import com.example.ui.dialogs.FileComplaintSheet
 import com.example.ui.theme.Cyan600
 import com.example.ui.theme.Navy700
 import com.example.ui.theme.Navy900
@@ -69,6 +74,7 @@ fun ViolationDetailSheet(
     onViewEvidence: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showComplaintSheet by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -311,7 +317,44 @@ fun ViolationDetailSheet(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Action Button: File a Complaint
+            Button(
+                onClick = { showComplaintSheet = true },
+                colors = ButtonDefaults.buttonColors(containerColor = ViolationRed),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("sheet_file_complaint_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Gavel,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "FILE A COMPLAINT (NATIONAL CONSUMER HELPLINE)",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 11.5.sp
+                    )
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (showComplaintSheet) {
+        FileComplaintSheet(
+            violations = listOf(violation),
+            complianceScore = 55,
+            onDismiss = { showComplaintSheet = false }
+        )
     }
 }

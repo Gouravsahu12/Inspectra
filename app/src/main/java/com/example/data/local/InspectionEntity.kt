@@ -2,13 +2,13 @@ package com.example.data.local
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import com.example.model.ComplianceStatus
-import com.example.model.ProductCategory
 
 @Entity(tableName = "inspections")
 data class InspectionEntity(
     @PrimaryKey
     val id: String, // e.g. INS-2026-000124
+    val clientUuid: String = id,
+    val userId: String = "",
     val productName: String,
     val brandManufacturer: String,
     val category: String, // ProductCategory name
@@ -24,6 +24,8 @@ data class InspectionEntity(
     val violationsJson: String, // JSON serialized violations
     val imageDrawableNames: String, // Comma separated
     val officerNotes: String,
-    val isReportGenerated: Boolean,
-    val manufacturerRiskLevel: String
+    val isReportGenerated: Boolean = false,
+    val reportUrl: String? = null,
+    val manufacturerRiskLevel: String = "LOW",
+    val isPendingSync: Boolean = false
 )

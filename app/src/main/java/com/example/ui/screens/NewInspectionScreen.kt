@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -8,7 +9,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -25,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -39,20 +43,31 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
+import android.widget.Toast
+import com.example.util.PdfReportGenerator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -84,12 +99,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -326,6 +343,18 @@ fun NewInspectionScreen(
         )
     }
 
+    val currentUserProfile by viewModel.currentUserProfile.collectAsState()
+    val isOfficer = currentUserProfile.role == UserRole.OFFICER
+
+    BackHandler {
+        val minStep = if (isOfficer) 1 else 2
+        if (step > minStep && step != 3) {
+            viewModel.goToWizardStep(step - 1)
+        } else {
+            viewModel.setShowDiscardDialog(true)
+        }
+    }
+
     // Main Wizard Screen Container
     Column(
         modifier = Modifier
@@ -337,7 +366,9 @@ fun NewInspectionScreen(
         Surface(
             color = Color.White,
             shadowElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(
@@ -414,22 +445,11 @@ fun NewInspectionScreen(
                 .weight(1f)
         ) {
             when (step) {
-                1 -> {
-                    if (isOfficer) {
-                        WizardStepProductMetadata(
-                            viewModel = viewModel,
-                            onNext = { viewModel.goToWizardStep(2) }
-                        )
-                    } else {
-                        WizardStepCameraCapture(
-                            viewModel = viewModel,
-                            isOfficer = false,
-                            onOpenCamera = { side -> viewModel.openCamera(side) },
-                            onOpenGallery = { galleryLauncher.launch("image/*") },
-                            onNext = { viewModel.runAiAnalysis() }
-                        )
-                    }
-                }
+                1 -> WizardStepProductMetadata(
+                    viewModel = viewModel,
+                    isOfficer = isOfficer,
+                    onNext = { viewModel.goToWizardStep(2) }
+                )
                 2 -> WizardStepCameraCapture(
                     viewModel = viewModel,
                     isOfficer = isOfficer,
@@ -456,22 +476,13 @@ fun NewInspectionScreen(
 
 @Composable
 fun StepProgressBar(currentStep: Int, isOfficer: Boolean = true) {
-    val steps = if (isOfficer) {
-        listOf(
-            "01 Product",
-            "02 Capture",
-            "03 Analyze",
-            "04 Review",
-            "05 Result"
-        )
-    } else {
-        listOf(
-            "01 Capture",
-            "02 Analyze",
-            "03 Review",
-            "04 Result"
-        )
-    }
+    val steps = listOf(
+        "01 Category",
+        "02 Capture",
+        "03 Analyze",
+        "04 Review",
+        "05 Result"
+    )
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -479,7 +490,7 @@ fun StepProgressBar(currentStep: Int, isOfficer: Boolean = true) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         steps.forEachIndexed { index, label ->
-            val actualStep = if (isOfficer) index + 1 else index + 2
+            val actualStep = index + 1
             val isCompleted = currentStep > actualStep
             val isCurrent = currentStep == actualStep
 
@@ -497,7 +508,7 @@ fun StepProgressBar(currentStep: Int, isOfficer: Boolean = true) {
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .background(pillBg)
-                    .padding(horizontal = if (isOfficer) 7.dp else 10.dp, vertical = 5.dp),
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -513,11 +524,12 @@ fun StepProgressBar(currentStep: Int, isOfficer: Boolean = true) {
     }
 }
 
-// STEP 1: Inspection Details (Product & Establishment Details)
+// STEP 1: Inspection Details (Product Category & Parameters)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WizardStepProductMetadata(
     viewModel: InspectraViewModel,
+    isOfficer: Boolean = true,
     onNext: () -> Unit
 ) {
     val location by viewModel.locationName.collectAsState()
@@ -526,18 +538,121 @@ fun WizardStepProductMetadata(
     val category by viewModel.selectedCategory.collectAsState()
     val inspectionId by viewModel.activeInspectionId.collectAsState()
     val createdAt by viewModel.inspectionCreatedAt.collectAsState()
+    val currentUserProfile by viewModel.currentUserProfile.collectAsState()
 
     var locationInput by remember(location) { mutableStateOf(location) }
     var storeInput by remember(store) { mutableStateOf(store) }
     var facilityInput by remember(facility) { mutableStateOf(facility) }
     var commodityNameInput by remember { mutableStateOf("ABC Active Detergent Powder (1 kg)") }
     var batchNoInput by remember { mutableStateOf("BAT-2026-X992") }
-    var categoryDropdownExpanded by remember { mutableStateOf(false) }
 
     val formattedTime = remember(createdAt) {
         val sdf = SimpleDateFormat("dd MMM yyyy, HH:mm 'IST'", Locale.getDefault())
         sdf.format(Date(createdAt))
     }
+
+    data class CategoryDropdownItem(
+        val category: ProductCategory,
+        val title: String,
+        val code: String,
+        val tag: String,
+        val summary: String,
+        val statutoryNotes: String,
+        val icon: ImageVector,
+        val tintColor: Color,
+        val bgTint: Color
+    )
+
+    val categoryOptions = remember {
+        listOf(
+            CategoryDropdownItem(
+                category = ProductCategory.FOOD_BEVERAGES,
+                title = "Food & Beverages",
+                code = "CAT-FNB",
+                tag = "FSSAI & LMPC Sched 2",
+                summary = "FSSAI Lic, Best Before, USP, Net Qty (g/kg/ml), Veg Logo",
+                statutoryNotes = "Under LMPC Rules 2011 & FSSAI: All food packages require FSSAI Lic No., Unit Sale Price (USP), Expiration / Best Before, Veg/Non-Veg declaration logo, Net Quantity in metric units (g/kg/ml/l), and Ingredients list.",
+                icon = Icons.Default.Restaurant,
+                tintColor = Color(0xFF059669),
+                bgTint = Color(0xFFECFDF5)
+            ),
+            CategoryDropdownItem(
+                category = ProductCategory.HOUSEHOLD_PRODUCTS,
+                title = "Household & Detergents",
+                code = "CAT-HHP",
+                tag = "Rule 6 LMPC 2011",
+                summary = "Net Qty, MRP (incl. taxes), Helpline, Packer Details",
+                statutoryNotes = "Under LMPC Rule 6: Mandatory declarations include Net Quantity, Maximum Retail Price (MRP inclusive of all taxes), Month & Year of Packaging, Consumer Care Helpline, and Registered Packer name.",
+                icon = Icons.Default.CleaningServices,
+                tintColor = Color(0xFF2563EB),
+                bgTint = Color(0xFFEFF6FF)
+            ),
+            CategoryDropdownItem(
+                category = ProductCategory.COSMETICS,
+                title = "Cosmetics & Skincare",
+                code = "CAT-COS",
+                tag = "D&C Act & LMPC",
+                summary = "Mfg Lic No, Net Vol/Mass, Expiry Date / Batch No",
+                statutoryNotes = "Under LMPC Rules 2011 & D&C Act: Cosmetics require Manufacturing License Number, Net Volume/Weight, Expiry/Use-by date, Batch identification number, and complete Manufacturer address.",
+                icon = Icons.Default.Face,
+                tintColor = Color(0xFFD97706),
+                bgTint = Color(0xFFFFFBEB)
+            ),
+            CategoryDropdownItem(
+                category = ProductCategory.PERSONAL_CARE,
+                title = "Personal Care & Hygiene",
+                code = "CAT-PC",
+                tag = "LMPC Rules 2011",
+                summary = "Net Volume/Mass, MRP, Country of Origin, Consumer Contact",
+                statutoryNotes = "Under LMPC Rules: Requires unambiguous Net Content, Unit Sale Price (USP), Country of Origin, Customer Care contact details, and Manufacturer / Importer address.",
+                icon = Icons.Default.Face,
+                tintColor = Color(0xFF7C3AED),
+                bgTint = Color(0xFFF5F3FF)
+            ),
+            CategoryDropdownItem(
+                category = ProductCategory.ELECTRICAL_CONSUMER_GOODS,
+                title = "Electrical & Electronics",
+                code = "CAT-ECG",
+                tag = "LMPC & BIS Stds",
+                summary = "Voltage & Power, Country of Origin, Mfg Date, Dimensions",
+                statutoryNotes = "Under LMPC Rules 2011: Electrical appliances require Rated Voltage (V), Operating Frequency (Hz), Country of Origin, Month/Year of Import/Mfg, Generic Name, and Dimension specifications.",
+                icon = Icons.Default.Devices,
+                tintColor = Color(0xFF0284C7),
+                bgTint = Color(0xFFF0F9FF)
+            ),
+            CategoryDropdownItem(
+                category = ProductCategory.OTHER,
+                title = "Other Commodities",
+                code = "CAT-OTH",
+                tag = "General Rule 6",
+                summary = "Standard Rule 6 LMPC Declarations (MRP, Net Qty, Origin, Packer)",
+                statutoryNotes = "General Rule 6 LMPC 2011 declarations: Name & Address of Manufacturer/Packer, Generic Name, Net Quantity, Month & Year of Mfg/Import, MRP (inclusive of all taxes), and Consumer Helpline.",
+                icon = Icons.Default.Inventory2,
+                tintColor = Color(0xFF475569),
+                bgTint = Color(0xFFF8FAFC)
+            )
+        )
+    }
+
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var showStatutoryNotes by remember { mutableStateOf(false) }
+
+    val currentOption = remember(category) {
+        categoryOptions.find { it.category == category }
+            ?: when (category) {
+                ProductCategory.EDIBLE_OILS, ProductCategory.PACKAGED_GRAINS -> categoryOptions.first { it.category == ProductCategory.FOOD_BEVERAGES }
+                ProductCategory.COSMETICS_PERSONAL_CARE -> categoryOptions.first { it.category == ProductCategory.COSMETICS }
+                ProductCategory.HOUSEHOLD_CHEMICALS -> categoryOptions.first { it.category == ProductCategory.HOUSEHOLD_PRODUCTS }
+                ProductCategory.GENERAL_COMMODITY -> categoryOptions.first { it.category == ProductCategory.OTHER }
+                else -> categoryOptions.first { it.category == ProductCategory.FOOD_BEVERAGES }
+            }
+    }
+
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (categoryMenuExpanded) 180f else 0f,
+        animationSpec = tween(durationMillis = 250),
+        label = "chevronRotation"
+    )
 
     Column(
         modifier = Modifier
@@ -546,20 +661,20 @@ fun WizardStepProductMetadata(
             .padding(16.dp)
     ) {
         Text(
-            text = "Step 01: Inspection Details",
+            text = "Step 01: Product Category & Parameters",
             style = MaterialTheme.typography.titleMedium.copy(
                 fontWeight = FontWeight.Bold,
                 color = Slate900
             )
         )
         Text(
-            text = "Record establishment metadata, jurisdiction, and target commodity category",
+            text = "Select commodity category to apply statutory legal rules and OCR validation parameters",
             style = MaterialTheme.typography.bodySmall.copy(color = Slate500)
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Statutory Header Card (Inspection ID & Timestamp)
+        // Statutory Header Card (Inspection ID & User Profile Info)
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = Color(0xFFF1F5F9),
@@ -574,7 +689,7 @@ fun WizardStepProductMetadata(
                 ) {
                     Column {
                         Text(
-                            text = "INSPECTION RECORD ID",
+                            text = "AUDIT IDENTIFIER",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Slate600,
@@ -596,7 +711,7 @@ fun WizardStepProductMetadata(
                         modifier = Modifier.padding(2.dp)
                     ) {
                         Text(
-                            text = "OFFICIAL RECORD",
+                            text = if (isOfficer) "OFFICIAL AUDIT" else "USER AUDIT",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Navy700,
@@ -633,7 +748,7 @@ fun WizardStepProductMetadata(
 
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = "INSPECTOR",
+                            text = if (isOfficer) "INSPECTING OFFICER" else "USER PROFILE",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Slate600,
@@ -641,7 +756,7 @@ fun WizardStepProductMetadata(
                             )
                         )
                         Text(
-                            text = "Off. Rajesh Sharma (LM-84920)",
+                            text = "${currentUserProfile.name} (${currentUserProfile.id})",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = Slate800,
                                 fontWeight = FontWeight.Medium
@@ -652,165 +767,309 @@ fun WizardStepProductMetadata(
             }
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Establishment / Store Name
-        Text(
-            text = "ESTABLISHMENT / STORE NAME *",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                color = Slate700,
-                letterSpacing = 0.5.sp
-            )
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        OutlinedTextField(
-            value = storeInput,
-            onValueChange = { storeInput = it },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("store_name_input"),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Navy700,
-                unfocusedBorderColor = Slate300
-            ),
-            shape = RoundedCornerShape(10.dp)
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Inspection Location
-        Text(
-            text = "INSPECTION ADDRESS & JURISDICTION *",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                color = Slate700,
-                letterSpacing = 0.5.sp
-            )
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        OutlinedTextField(
-            value = locationInput,
-            onValueChange = { locationInput = it },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("location_input"),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Navy700,
-                unfocusedBorderColor = Slate300
-            ),
-            shape = RoundedCornerShape(10.dp)
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Facility Type Chips
-        Text(
-            text = "FACILITY TYPE",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                color = Slate700,
-                letterSpacing = 0.5.sp
-            )
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        val facilityOptions = listOf("Supermarket", "Retail Store", "Wholesale", "Warehouse", "Plant", "Other")
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
+        // COMPACT INTERACTIVE CATEGORY DROPDOWN
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            items(facilityOptions) { type ->
-                val isSelected = facilityInput.equals(type, ignoreCase = true)
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isSelected) Navy100 else Slate100,
-                    border = BorderStroke(1.dp, if (isSelected) Navy700 else Slate300),
-                    modifier = Modifier.clickable { facilityInput = type }
-                ) {
-                    Text(
-                        text = type,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) Navy900 else Slate700,
-                            fontSize = 12.sp
-                        ),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                    )
-                }
+            Text(
+                text = "COMMODITY CATEGORY *",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Slate700,
+                    letterSpacing = 0.5.sp
+                )
+            )
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = currentOption.bgTint,
+                border = BorderStroke(1.dp, currentOption.tintColor.copy(alpha = 0.35f))
+            ) {
+                Text(
+                    text = currentOption.tag,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = currentOption.tintColor
+                    ),
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Product Category Dropdown
-        Text(
-            text = "PRODUCT COMMODITY CATEGORY *",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                color = Slate700,
-                letterSpacing = 0.5.sp
-            )
-        )
         Spacer(modifier = Modifier.height(6.dp))
 
-        ExposedDropdownMenuBox(
-            expanded = categoryDropdownExpanded,
-            onExpandedChange = { categoryDropdownExpanded = !categoryDropdownExpanded },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            OutlinedTextField(
-                value = category.displayName,
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryDropdownExpanded) },
-                modifier = Modifier
-                    .menuAnchor()
-                    .fillMaxWidth()
-                    .testTag("category_dropdown_trigger"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Navy700,
-                    unfocusedBorderColor = Slate300
+        // Interactive Dropdown Trigger Box
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White,
+                border = BorderStroke(
+                    width = if (categoryMenuExpanded) 2.dp else 1.dp,
+                    color = if (categoryMenuExpanded) currentOption.tintColor else Slate300
                 ),
-                shape = RoundedCornerShape(10.dp)
-            )
-
-            ExposedDropdownMenu(
-                expanded = categoryDropdownExpanded,
-                onDismissRequest = { categoryDropdownExpanded = false }
+                shadowElevation = if (categoryMenuExpanded) 4.dp else 1.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { categoryMenuExpanded = !categoryMenuExpanded }
             ) {
-                listOf(
-                    ProductCategory.FOOD_BEVERAGES,
-                    ProductCategory.COSMETICS,
-                    ProductCategory.HOUSEHOLD_PRODUCTS,
-                    ProductCategory.PERSONAL_CARE,
-                    ProductCategory.ELECTRICAL_CONSUMER_GOODS,
-                    ProductCategory.OTHER
-                ).forEach { cat ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Category Icon with colored background
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = currentOption.bgTint,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = currentOption.icon,
+                                contentDescription = null,
+                                tint = currentOption.tintColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = currentOption.title,
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Slate900,
+                                    fontSize = 14.sp
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Slate100
+                            ) {
+                                Text(
+                                    text = currentOption.code,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Slate600
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = currentOption.summary,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.sp,
+                                color = Slate500
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Rotating animated Chevron
+                    Surface(
+                        shape = CircleShape,
+                        color = if (categoryMenuExpanded) currentOption.bgTint else Color(0xFFF1F5F9),
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.ExpandMore,
+                                contentDescription = "Expand category list",
+                                tint = if (categoryMenuExpanded) currentOption.tintColor else Slate700,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .rotate(chevronRotation)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Dropdown Menu Popover
+            DropdownMenu(
+                expanded = categoryMenuExpanded,
+                onDismissRequest = { categoryMenuExpanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .background(Color.White, RoundedCornerShape(12.dp))
+                    .border(1.dp, Slate200, RoundedCornerShape(12.dp))
+            ) {
+                categoryOptions.forEach { item ->
+                    val isSelected = item.category == category
                     DropdownMenuItem(
                         text = {
-                            Column {
-                                Text(
-                                    text = cat.displayName,
-                                    fontWeight = if (cat == category) FontWeight.Bold else FontWeight.Normal
-                                )
-                                Text(
-                                    text = "Code: ${cat.code} • LMPC Schedule 2",
-                                    style = MaterialTheme.typography.labelSmall.copy(color = Slate500, fontSize = 10.sp)
-                                )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) item.bgTint else Color(0xFFF8FAFC),
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = item.icon,
+                                            contentDescription = null,
+                                            tint = if (isSelected) item.tintColor else Slate600,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = item.title,
+                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                color = if (isSelected) Slate900 else Slate800,
+                                                fontSize = 13.sp
+                                            )
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(3.dp),
+                                            color = item.bgTint
+                                        ) {
+                                            Text(
+                                                text = item.code,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = item.tintColor
+                                                ),
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = item.summary,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontSize = 10.5.sp,
+                                            color = if (isSelected) Navy700 else Slate500,
+                                            lineHeight = 14.sp
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                if (isSelected) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Selected",
+                                        tint = item.tintColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         },
                         onClick = {
-                            viewModel.updateMetadata(locationInput, facilityInput, storeInput, cat)
-                            categoryDropdownExpanded = false
-                        }
+                            viewModel.setProductCategory(item.category)
+                            viewModel.updateMetadata(locationInput, facilityInput, storeInput, item.category)
+                            categoryMenuExpanded = false
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(if (isSelected) item.bgTint.copy(alpha = 0.5f) else Color.Transparent)
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Compact Interactive Statutory Checklist & Notice Pill
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = currentOption.bgTint.copy(alpha = 0.6f),
+            border = BorderStroke(1.dp, currentOption.tintColor.copy(alpha = 0.25f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { showStatutoryNotes = !showStatutoryNotes }
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = currentOption.tintColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Scope: ${currentOption.summary}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 10.5.sp,
+                                color = Slate800,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            maxLines = if (showStatutoryNotes) 3 else 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Text(
+                        text = if (showStatutoryNotes) "Hide Rules" else "View Rules",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = currentOption.tintColor
+                        )
+                    )
+                }
+
+                AnimatedVisibility(visible = showStatutoryNotes) {
+                    Column {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = currentOption.statutoryNotes,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.sp,
+                                color = Slate700,
+                                lineHeight = 15.sp
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
 
         // Commodity Name
         Text(
@@ -857,6 +1116,96 @@ fun WizardStepProductMetadata(
             ),
             shape = RoundedCornerShape(10.dp)
         )
+
+        // Officer-Specific Establishment Details
+        if (isOfficer) {
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Text(
+                text = "ESTABLISHMENT / STORE NAME *",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Slate700,
+                    letterSpacing = 0.5.sp
+                )
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            OutlinedTextField(
+                value = storeInput,
+                onValueChange = { storeInput = it },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("store_name_input"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Navy700,
+                    unfocusedBorderColor = Slate300
+                ),
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "INSPECTION ADDRESS & JURISDICTION *",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Slate700,
+                    letterSpacing = 0.5.sp
+                )
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            OutlinedTextField(
+                value = locationInput,
+                onValueChange = { locationInput = it },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("location_input"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Navy700,
+                    unfocusedBorderColor = Slate300
+                ),
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "FACILITY TYPE",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Slate700,
+                    letterSpacing = 0.5.sp
+                )
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            val facilityOptions = listOf("Supermarket", "Retail Store", "Wholesale", "Warehouse", "Plant", "Other")
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(facilityOptions) { type ->
+                    val isSelected = facilityInput.equals(type, ignoreCase = true)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) Navy100 else Slate100,
+                        border = BorderStroke(1.dp, if (isSelected) Navy700 else Slate300),
+                        modifier = Modifier.clickable { facilityInput = type }
+                    ) {
+                        Text(
+                            text = type,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Navy900 else Slate700,
+                                fontSize = 12.sp
+                            ),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -1808,8 +2157,6 @@ fun WizardStepExtractedDataReview(
         extractedFields.any { it.hasConflict }
     }
 
-    var categoryDropdownExpanded by remember { mutableStateOf(false) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1943,74 +2290,50 @@ fun WizardStepExtractedDataReview(
             Spacer(modifier = Modifier.height(14.dp))
         }
 
-        // Product Category Selector (Dark color text & AI Suggested label removed)
+        // Product Category Indicator (Selected in Step 1)
         Surface(
             shape = RoundedCornerShape(10.dp),
             color = Color.White,
             border = BorderStroke(1.dp, Slate200),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "COMMODITY CATEGORY",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A)
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                ExposedDropdownMenuBox(
-                    expanded = categoryDropdownExpanded,
-                    onExpandedChange = { categoryDropdownExpanded = !categoryDropdownExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = selectedCategory.displayName,
-                        onValueChange = {},
-                        readOnly = true,
-                        textStyle = TextStyle(
-                            fontSize = 14.sp,
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "COMMODITY CATEGORY",
+                        style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A)
-                        ),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryDropdownExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF0F172A),
-                            unfocusedTextColor = Color(0xFF0F172A),
-                            focusedBorderColor = Navy700,
-                            unfocusedBorderColor = Slate400,
-                            focusedContainerColor = Color(0xFFF8FAFC),
-                            unfocusedContainerColor = Color(0xFFF8FAFC)
-                        ),
-                        shape = RoundedCornerShape(8.dp)
+                            color = Slate500,
+                            letterSpacing = 0.5.sp
+                        )
                     )
-
-                    ExposedDropdownMenu(
-                        expanded = categoryDropdownExpanded,
-                        onDismissRequest = { categoryDropdownExpanded = false }
-                    ) {
-                        ProductCategory.values().forEach { cat ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = cat.displayName,
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            color = Color(0xFF0F172A),
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    )
-                                },
-                                onClick = {
-                                    viewModel.setProductCategory(cat)
-                                    categoryDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = selectedCategory.displayName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Navy900
+                        )
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFEFF6FF))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = "Set in Step 1",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = Navy700,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    )
                 }
             }
         }
@@ -2348,6 +2671,11 @@ fun WizardStepComplianceResult(
     val status by viewModel.complianceStatus.collectAsState()
     val violations by viewModel.violations.collectAsState()
     val extractedFields by viewModel.extractedFields.collectAsState()
+    val context = LocalContext.current
+
+    val noFieldsDetected = remember(extractedFields) {
+        extractedFields.all { it.extractedValue.isBlank() || it.status == FieldStatus.NOT_DETECTED }
+    }
 
     Column(
         modifier = Modifier
@@ -2411,6 +2739,91 @@ fun WizardStepComplianceResult(
         }
 
         Spacer(modifier = Modifier.height(18.dp))
+
+        // OCR Diagnostics & Potential Mistakes Banner if zero or all missing declarations detected
+        if (noFieldsDetected) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = WarningAmberBg,
+                border = BorderStroke(1.dp, WarningAmberBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = WarningAmber,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "OCR Diagnostic: Zero Declarations Extracted",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF92400E)
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "The vision engine was unable to extract statutory text from the captured image. Possible causes:",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = Slate800,
+                            fontSize = 12.sp
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    listOf(
+                        "• Wrong Category: The selected commodity category rules do not match the packaging type.",
+                        "• Unclear / Blurry Photo: Product label is out of focus, motion-blurred, or text resolution is too low.",
+                        "• Poor Lighting or Glare: Reflective plastic glare, dark shadow, or overexposed lighting hiding text.",
+                        "• Missing Declaration Panel: Principal display panel or statutory address box was outside the frame.",
+                        "• Curved or Folded Packaging: Text on crinkled foil, cylinder curves, or folded pouch seams."
+                    ).forEach { cause ->
+                        Text(
+                            text = cause,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = Slate700,
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp
+                            ),
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.goToWizardStep(1) },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Change Category", fontSize = 11.5.sp, color = Navy700)
+                        }
+                        Button(
+                            onClick = { viewModel.goToWizardStep(2) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Navy700),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Retake Photo", fontSize = 11.5.sp, color = Color.White)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+        }
 
         // Checklist Summary
         Surface(
@@ -2570,6 +2983,37 @@ fun WizardStepComplianceResult(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = "GENERATE OFFICIAL INSPECTION REPORT",
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // COMPLETE AUDIT BUTTON (Save to Database & Direct to Dashboard)
+        Button(
+            onClick = {
+                viewModel.completeAuditAndReturn()
+                Toast.makeText(context, "Audit completed and saved to registry", Toast.LENGTH_SHORT).show()
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = CompliantGreen),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .testTag("complete_audit_button")
+        ) {
+            Icon(
+                imageVector = Icons.Default.DoneAll,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "COMPLETE AUDIT & RETURN TO DASHBOARD",
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = FontWeight.Bold,
                     color = Color.White

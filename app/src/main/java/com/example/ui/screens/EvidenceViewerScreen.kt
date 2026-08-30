@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -56,6 +58,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.model.ExtractedField
 import com.example.model.FieldStatus
@@ -87,12 +91,21 @@ fun EvidenceViewerScreen(
     val sampleType by viewModel.selectedSampleType.collectAsState()
     val violations by viewModel.violations.collectAsState()
     val extractedFields by viewModel.extractedFields.collectAsState()
+    val productImages by viewModel.productImages.collectAsState()
     var selectedLayer by remember { mutableStateOf("all") } // "all", "violations", "ocr"
 
-    val currentImgRes = when (sampleType) {
+    val capturedUserImageUri = productImages.firstOrNull()?.uri
+    val isRealCapturedImage = !capturedUserImageUri.isNullOrBlank() &&
+            (capturedUserImageUri.startsWith("content://") || capturedUserImageUri.startsWith("file://") || capturedUserImageUri.startsWith("/"))
+
+    val sampleImgRes = when (sampleType) {
         "oil" -> R.drawable.img_edible_oil_package
         "biscuits" -> R.drawable.img_snack_package
         else -> R.drawable.img_detergent_package
+    }
+
+    BackHandler {
+        onBack()
     }
 
     Column(
@@ -111,6 +124,7 @@ fun EvidenceViewerScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -209,11 +223,20 @@ fun EvidenceViewerScreen(
                 .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            Image(
-                painter = painterResource(id = currentImgRes),
-                contentDescription = "Package Evidence",
-                modifier = Modifier.fillMaxSize()
-            )
+            if (isRealCapturedImage && capturedUserImageUri != null) {
+                AsyncImage(
+                    model = capturedUserImageUri,
+                    contentDescription = "User Captured Package Evidence",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Image(
+                    painter = painterResource(id = sampleImgRes),
+                    contentDescription = "Package Evidence",
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
 
             // Bounding Box Overlays Canvas
             Canvas(modifier = Modifier.fillMaxSize()) {

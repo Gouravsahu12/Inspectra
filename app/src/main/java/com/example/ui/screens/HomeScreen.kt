@@ -46,6 +46,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.ReportProblem
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +61,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.model.ComplianceStatus
 import com.example.model.InspectionRecord
@@ -92,11 +99,19 @@ fun HomeScreen(
 ) {
     val userProfile by viewModel.currentUserProfile.collectAsState()
     val inspections by viewModel.inspections.collectAsState()
+    val isOfficer = userProfile.role == com.example.model.UserRole.OFFICER
+    var showDirectComplaintSheet by remember { mutableStateOf(false) }
 
     val totalCount = inspections.size
     val compliantCount = inspections.count { it.status == ComplianceStatus.COMPLIANT }
     val violationCount = inspections.count { it.status == ComplianceStatus.NON_COMPLIANT }
     val warningCount = inspections.count { it.status == ComplianceStatus.WARNING }
+
+    if (showDirectComplaintSheet) {
+        com.example.ui.dialogs.FileComplaintSheet(
+            onDismiss = { showDirectComplaintSheet = false }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -116,104 +131,41 @@ fun HomeScreen(
             // Top User Bar
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(listOf(Navy800, Navy700))
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = userProfile.name.take(2).uppercase(),
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.linearGradient(listOf(Navy800, Navy700))
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = userProfile.name.take(2).uppercase(),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Welcome, ${userProfile.role.displayName}",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = Slate500,
-                                fontSize = 12.sp
-                            )
-                        )
-                        Text(
-                            text = userProfile.name,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = Slate900
-                            )
-                        )
-                    }
+                    )
                 }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val isSyncing by viewModel.isSyncing.collectAsState()
-                    val syncMessage by viewModel.syncStatusMessage.collectAsState()
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color(0xFFF0FDF4))
-                            .border(1.dp, Color(0xFFBBF7D0), RoundedCornerShape(20.dp))
-                            .clickable { viewModel.syncWithCloud() }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isSyncing) WarningAmber else CompliantGreen)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isSyncing) "Syncing..." else "Supabase Live",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = Color(0xFF166534),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
-                                )
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color(0xFFEFF6FF))
-                            .border(1.dp, Color(0xFFBFDBFE), RoundedCornerShape(20.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(CompliantGreen)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Zone-4 Active",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = Navy700,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
-                                )
-                            )
-                        }
-                    }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Welcome ${userProfile.name}",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Slate900
+                        )
+                    )
+                    Text(
+                        text = userProfile.role.displayName,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = Slate500,
+                            fontSize = 12.sp
+                        )
+                    )
                 }
             }
 
@@ -239,14 +191,14 @@ fun HomeScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.Gavel,
+                                imageVector = if (isOfficer) Icons.Default.Gavel else Icons.Default.VerifiedUser,
                                 contentDescription = null,
                                 tint = GoldAccent,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "LEGAL METROLOGY INSPECTION",
+                                text = if (isOfficer) "LEGAL METROLOGY INSPECTION" else "CONSUMER PACKAGING VERIFIER",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     color = GoldAccent,
                                     fontWeight = FontWeight.Bold,
@@ -256,7 +208,7 @@ fun HomeScreen(
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "+ Start New Inspection",
+                            text = if (isOfficer) "+ Start Field Inspection" else "+ Scan Product Package",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
@@ -265,7 +217,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Multi-angle package scan & LMPC 2011 AI verification",
+                            text = if (isOfficer) "Multi-angle package scan & LMPC 2011 statutory verification" else "Scan packaging to check MRP, Net Qty, Dates & Mandated rules",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = Slate400,
                                 fontSize = 12.sp
@@ -294,7 +246,7 @@ fun HomeScreen(
 
             // Today's Overview Title
             Text(
-                text = "Today's Field Overview",
+                text = if (isOfficer) "Today's Field Overview" else "Your Scanning Activity",
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
                     color = Slate900
@@ -370,7 +322,7 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 QuickActionItem(
-                    title = "New Scan",
+                    title = if (isOfficer) "New Audit" else "Scan Product",
                     icon = Icons.Default.CameraAlt,
                     color = Navy700,
                     onClick = onStartNewInspection
@@ -387,12 +339,21 @@ fun HomeScreen(
                     color = Color(0xFF7C3AED),
                     onClick = { onNavigateToTab(2) }
                 )
-                QuickActionItem(
-                    title = "LMPC Rules",
-                    icon = Icons.Default.Gavel,
-                    color = GoldAccent,
-                    onClick = { onNavigateToTab(3) }
-                )
+                if (isOfficer) {
+                    QuickActionItem(
+                        title = "LMPC Rules",
+                        icon = Icons.Default.Gavel,
+                        color = GoldAccent,
+                        onClick = { onNavigateToTab(3) }
+                    )
+                } else {
+                    QuickActionItem(
+                        title = "File Complain",
+                        icon = Icons.Default.ReportProblem,
+                        color = ViolationRed,
+                        onClick = { showDirectComplaintSheet = true }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -404,7 +365,7 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "Recent Inspections",
+                    text = if (isOfficer) "Recent Inspections" else "Recent Scans",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = Slate900
@@ -581,8 +542,10 @@ fun InspectionItemCard(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail or category icon
-            val imgRes = when (inspection.imageDrawableNames.firstOrNull()) {
+            // Thumbnail or captured image
+            val firstImgUri = inspection.imageDrawableNames.firstOrNull() ?: ""
+            val isRealImage = firstImgUri.startsWith("content://") || firstImgUri.startsWith("file://") || firstImgUri.startsWith("/")
+            val sampleImgRes = when (firstImgUri) {
                 "img_edible_oil_package" -> R.drawable.img_edible_oil_package
                 "img_snack_package" -> R.drawable.img_snack_package
                 else -> R.drawable.img_detergent_package
@@ -594,11 +557,21 @@ fun InspectionItemCard(
                     .clip(RoundedCornerShape(8.dp))
                     .background(Slate100)
             ) {
-                Image(
-                    painter = painterResource(id = imgRes),
-                    contentDescription = inspection.productName,
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (isRealImage) {
+                    AsyncImage(
+                        model = firstImgUri,
+                        contentDescription = inspection.productName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(id = sampleImgRes),
+                        contentDescription = inspection.productName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(12.dp))

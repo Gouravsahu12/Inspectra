@@ -380,8 +380,16 @@ private fun CameraPreviewContent(
         }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(context) {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         onDispose {
+            try {
+                if (cameraProviderFuture.isDone) {
+                    cameraProviderFuture.get().unbindAll()
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
             cameraExecutor.shutdown()
         }
     }
@@ -676,6 +684,14 @@ private fun CameraPreviewContent(
                                     cameraExecutor = cameraExecutor,
                                     side = selectedSide,
                                     onSuccess = { captured ->
+                                        try {
+                                            val provider = ProcessCameraProvider.getInstance(context)
+                                            if (provider.isDone) {
+                                                provider.get().unbindAll()
+                                            }
+                                        } catch (e: Exception) {
+                                            // ignore
+                                        }
                                         isCapturing = false
                                         onImageCaptured(captured)
                                     },

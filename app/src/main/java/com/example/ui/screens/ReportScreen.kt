@@ -1,10 +1,12 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -61,6 +64,7 @@ import com.example.model.FieldStatus
 import com.example.model.UserRole
 import com.example.ui.components.InspectraGovBadge
 import com.example.ui.components.StatusChip
+import com.example.ui.dialogs.FileComplaintSheet
 import com.example.ui.theme.CompliantGreen
 import com.example.ui.theme.Cyan600
 import com.example.ui.theme.GoldAccent
@@ -77,6 +81,7 @@ import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import com.example.ui.theme.ViolationRed
 import com.example.ui.theme.ViolationRedBg
+import com.example.util.PdfReportGenerator
 import com.example.viewmodel.InspectraViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -101,16 +106,52 @@ fun ReportScreen(
     val noticeIssued by viewModel.reportNoticeIssued.collectAsState()
 
     var showPdfDownloadedNotification by remember { mutableStateOf(false) }
+    var downloadedFileName by remember { mutableStateOf("") }
+    var showComplaintSheet by remember { mutableStateOf(false) }
+
+    val isSuspiciousOrViolating = violations.isNotEmpty() ||
+            status != ComplianceStatus.COMPLIANT ||
+            score < 90 ||
+            extractedFields.any { it.status == FieldStatus.VIOLATION || it.status == FieldStatus.NOT_DETECTED }
 
     val dateFormat = SimpleDateFormat("dd MMMM yyyy, hh:mm a", Locale.getDefault())
     val currentDateStr = dateFormat.format(Date())
 
-    Column(
+    val triggerPdfDownload = {
+        val record = viewModel.buildCurrentInspectionRecord()
+        val file = PdfReportGenerator.generatePdfReport(context, record, currentUserProfile)
+        if (file != null) {
+            downloadedFileName = file.name
+            showPdfDownloadedNotification = true
+            Toast.makeText(context, "PDF saved to Downloads/Documents: ${file.name}", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(context, "Failed to export PDF", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val triggerPdfShare = {
+        val record = viewModel.buildCurrentInspectionRecord()
+        val file = PdfReportGenerator.generatePdfReport(context, record, currentUserProfile)
+        if (file != null) {
+            PdfReportGenerator.sharePdfReport(context, file, record)
+        } else {
+            Toast.makeText(context, "Unable to generate PDF for sharing", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    BackHandler {
+        onBack()
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFF1F5F9))
             .testTag("report_screen")
     ) {
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
         // Top Toolbar
         Surface(
             color = Navy900,
@@ -121,6 +162,7 @@ fun ReportScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -152,21 +194,18 @@ fun ReportScreen(
 
                 Row {
                     IconButton(
-                        onClick = {
-                            showPdfDownloadedNotification = true
-                            Toast.makeText(context, "PDF Report Exported: $inspectionId.pdf", Toast.LENGTH_SHORT).show()
-                        }
+                        onClick = triggerPdfDownload,
+                        modifier = Modifier.testTag("report_toolbar_download_pdf")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.PictureAsPdf,
+                            imageVector = Icons.Default.Download,
                             contentDescription = "PDF Export",
                             tint = Color.White
                         )
                     }
                     IconButton(
-                        onClick = {
-                            Toast.makeText(context, "Official Notice shared via Enforcement Registry", Toast.LENGTH_SHORT).show()
-                        }
+                        onClick = triggerPdfShare,
+                        modifier = Modifier.testTag("report_toolbar_share_pdf")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Share,
@@ -196,7 +235,7 @@ fun ReportScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Report generated and archived: $inspectionId.pdf",
+                        text = "PDF successfully downloaded: $downloadedFileName",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = Color.White,
                             fontWeight = FontWeight.Medium
@@ -437,6 +476,71 @@ fun ReportScreen(
                         }
                     }
 
+                    // Suspicious / Violation Complaint Filing Action Card
+                    if (isSuspiciousOrViolating) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFFEF2F2),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Gavel,
+                                        contentDescription = null,
+                                        tint = ViolationRed,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "LMPC 2011 Non-Compliance Redressal",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = ViolationRed
+                                        )
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "This product has suspicious declarations or violates mandatory LMPC 2011 packaging rules. You can lodge an official complaint step-by-step through National Consumer Helpline (Call 1915/1800-11-4000, WhatsApp 8800001915, NCH/UMANG App, or Web Portal).",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = Slate800,
+                                        fontSize = 11.5.sp,
+                                        lineHeight = 16.sp
+                                    )
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = { showComplaintSheet = true },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = ViolationRed),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(40.dp)
+                                        .testTag("file_complaint_card_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Gavel,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "FILE A COMPLAINT (STEP-BY-STEP)",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 11.5.sp
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(20.dp))
                     HorizontalDivider(color = Slate200)
                     Spacer(modifier = Modifier.height(14.dp))
@@ -527,36 +631,159 @@ fun ReportScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            Button(
-                onClick = {
-                    showPdfDownloadedNotification = true
-                    Toast.makeText(context, "Inspection Report Saved & PDF Exported", Toast.LENGTH_SHORT).show()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Navy700),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("download_pdf_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Download,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "DOWNLOAD OFFICIAL PDF REPORT",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+            // Citizen / Retailer Complaint Button option
+            if (isSuspiciousOrViolating) {
+                Button(
+                    onClick = { showComplaintSheet = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = ViolationRed),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("file_complaint_report_action_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Gavel,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
                     )
-                )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "FILE OFFICIAL LMPC COMPLAINT",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = triggerPdfDownload,
+                    colors = ButtonDefaults.buttonColors(containerColor = Navy700),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .testTag("download_pdf_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "DOWNLOAD PDF",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    )
+                }
+
+                Button(
+                    onClick = triggerPdfShare,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .testTag("share_pdf_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "SHARE REPORT",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(72.dp))
         }
+    }
+
+    // Floating Tab / Pill for File a Complaint
+    if (isSuspiciousOrViolating) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Navy900,
+            shadowElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, GoldAccent),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+                .clickable { showComplaintSheet = true }
+                .testTag("floating_file_complaint_tab")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(ViolationRed),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Gavel,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "File a Complaint",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                    )
+                    Text(
+                        text = "Call 1915 • WhatsApp 8800001915 • NCH/UMANG",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = GoldAccent,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    // File Complaint Step-by-Step Bottom Sheet Modal
+    if (showComplaintSheet) {
+        FileComplaintSheet(
+            inspectionId = inspectionId,
+            storeName = store,
+            categoryName = category.displayName,
+            violations = violations,
+            complianceScore = score,
+            onDismiss = { showComplaintSheet = false }
+        )
+    }
     }
 }
 

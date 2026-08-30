@@ -2,6 +2,7 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -111,6 +112,11 @@ fun InspectraApp(viewModel: InspectraViewModel) {
             )
         }
     } else {
+        // When on any other tab (History, Analytics, Profile), back press returns to Home (Dashboard)
+        BackHandler(enabled = navIndex != 0) {
+            viewModel.setNavIndex(0)
+        }
+
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             bottomBar = {
@@ -169,31 +175,14 @@ fun InspectraApp(viewModel: InspectraViewModel) {
                         viewModel = viewModel,
                         onStartNewInspection = { viewModel.startNewInspection() },
                         onSelectInspection = { record ->
-                            viewModel.startNewInspection()
-                            // Set sample package if matches
-                            if (record.productName.contains("Oil", ignoreCase = true)) {
-                                viewModel.selectSamplePackage("oil")
-                            } else if (record.productName.contains("Cookie", ignoreCase = true) || record.productName.contains("Biscuit", ignoreCase = true)) {
-                                viewModel.selectSamplePackage("biscuits")
-                            } else {
-                                viewModel.selectSamplePackage("detergent")
-                            }
-                            viewModel.runAiAnalysis()
+                            viewModel.openInspectionReport(record)
                         },
                         onNavigateToTab = { index -> viewModel.setNavIndex(index) }
                     )
                     1 -> HistoryScreen(
                         viewModel = viewModel,
                         onSelectInspection = { record ->
-                            viewModel.startNewInspection()
-                            if (record.productName.contains("Oil", ignoreCase = true)) {
-                                viewModel.selectSamplePackage("oil")
-                            } else if (record.productName.contains("Cookie", ignoreCase = true) || record.productName.contains("Biscuit", ignoreCase = true)) {
-                                viewModel.selectSamplePackage("biscuits")
-                            } else {
-                                viewModel.selectSamplePackage("detergent")
-                            }
-                            viewModel.runAiAnalysis()
+                            viewModel.openInspectionReport(record)
                         }
                     )
                     2 -> AnalyticsScreen(viewModel = viewModel)

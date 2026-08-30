@@ -11,11 +11,20 @@ interface InspectionDao {
     @Query("SELECT * FROM inspections ORDER BY timestamp DESC")
     fun getAllInspections(): Flow<List<InspectionEntity>>
 
-    @Query("SELECT * FROM inspections WHERE id = :id")
+    @Query("SELECT * FROM inspections WHERE id = :id OR clientUuid = :id")
     suspend fun getInspectionById(id: String): InspectionEntity?
 
     @Query("SELECT * FROM inspections WHERE status = :status ORDER BY timestamp DESC")
     fun getInspectionsByStatus(status: String): Flow<List<InspectionEntity>>
+
+    @Query("SELECT * FROM inspections WHERE isPendingSync = 1 ORDER BY timestamp ASC")
+    suspend fun getPendingSyncInspections(): List<InspectionEntity>
+
+    @Query("UPDATE inspections SET isPendingSync = 0 WHERE id = :id OR clientUuid = :id")
+    suspend fun markAsSynced(id: String)
+
+    @Query("UPDATE inspections SET isReportGenerated = 1, reportUrl = :reportUrl WHERE id = :id OR clientUuid = :id")
+    suspend fun updateReport(id: String, reportUrl: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertInspection(inspection: InspectionEntity)
@@ -26,6 +35,9 @@ interface InspectionDao {
     @Query("SELECT COUNT(*) FROM inspections")
     suspend fun getCount(): Int
 
-    @Query("DELETE FROM inspections WHERE id = :id")
+    @Query("SELECT COUNT(*) FROM inspections WHERE isPendingSync = 1")
+    fun getPendingSyncCount(): Flow<Int>
+
+    @Query("DELETE FROM inspections WHERE id = :id OR clientUuid = :id")
     suspend fun deleteById(id: String)
 }

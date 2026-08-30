@@ -91,6 +91,8 @@ data class Violation(
 
 data class InspectionRecord(
     val id: String, // e.g. INS-2026-000124
+    val clientUuid: String = id,
+    val userId: String = "",
     val productName: String,
     val brandManufacturer: String,
     val category: ProductCategory,
@@ -106,8 +108,10 @@ data class InspectionRecord(
     val violations: List<Violation>,
     val imageDrawableNames: List<String>,
     val officerNotes: String = "",
-    val isReportGenerated: Boolean = true,
-    val manufacturerRiskLevel: String = "MEDIUM"
+    val isReportGenerated: Boolean = false,
+    val reportUrl: String? = null,
+    val manufacturerRiskLevel: String = "MEDIUM",
+    val isPendingSync: Boolean = false
 )
 
 enum class UserRole(
@@ -138,6 +142,7 @@ enum class UserRole(
 
 data class UserProfile(
     val id: String = "USR-7482",
+    val authUid: String? = null,
     val email: String = "officer.rajesh@lmpc.gov.in",
     val name: String = "Inspector Rajesh V. Sharma",
     val role: UserRole = UserRole.OFFICER,
@@ -147,7 +152,12 @@ data class UserProfile(
     val totalInspectionsToday: Int = 24,
     val compliantToday: Int = 18,
     val violationsToday: Int = 6,
-    val highRiskToday: Int = 2
+    val highRiskToday: Int = 2,
+    val phoneNumber: String = "",
+    val designation: String = "Senior Enforcement Inspector",
+    val officeLocation: String = "CGO Complex, CBD Belapur, Mumbai",
+    val joinedDate: String = "August 2024",
+    val lastLoginTime: String = "Today, 09:30 AM"
 )
 
 data class InspectorProfile(

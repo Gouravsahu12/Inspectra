@@ -43,11 +43,15 @@ object SupabaseClient {
     val isConfigured: Boolean
         get() = anonKey.isNotBlank() && !anonKey.contains("your_supabase_anon_key")
 
+    @Volatile
+    var currentAccessToken: String? = null
+
     private val authInterceptor = Interceptor { chain ->
         val original = chain.request()
+        val token = currentAccessToken?.takeIf { it.isNotBlank() } ?: anonKey
         val requestBuilder = original.newBuilder()
             .header("apikey", anonKey)
-            .header("Authorization", "Bearer $anonKey")
+            .header("Authorization", "Bearer $token")
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
 
@@ -62,9 +66,9 @@ object SupabaseClient {
         OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }
 
@@ -74,7 +78,7 @@ object SupabaseClient {
             .build()
     }
 
-    private val normalizedBaseUrl: String
+    val normalizedBaseUrl: String
         get() {
             var url = rawRestUrl
             if (!url.endsWith("/")) {
@@ -83,7 +87,7 @@ object SupabaseClient {
             return url
         }
 
-    private val normalizedRootUrl: String
+    val normalizedRootUrl: String
         get() {
             var url = rawSupabaseUrl
             if (!url.endsWith("/")) {
@@ -99,6 +103,15 @@ object SupabaseClient {
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(SupabaseApiService::class.java)
+    }
+
+    val functionsService: SupabaseFunctionsService by lazy {
+        Retrofit.Builder()
+            .baseUrl(normalizedRootUrl)
+            .client(okHttpClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(SupabaseFunctionsService::class.java)
     }
 
     val authService: SupabaseAuthService by lazy {
